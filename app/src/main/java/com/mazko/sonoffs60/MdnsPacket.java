@@ -58,6 +58,7 @@ public final class MdnsPacket {
     }
     public static List<Record> parse(byte[] b,int len) throws Exception {
         if(len<12 || len>b.length)throw new Exception("Invalid DNS packet");
+        b=java.util.Arrays.copyOf(b,len);
         int question=u16(b,4), answer=u16(b,6)+u16(b,8)+u16(b,10), pos=12;
         if(question>100 || answer>300) throw new Exception("Excessive DNS records");
         for(int i=0;i<question;i++) {

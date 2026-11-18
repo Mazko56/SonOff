@@ -27,7 +27,7 @@ public final class MainActivity extends Activity {
             runOnUiThread(()->{
                 Intent send=new Intent(Intent.ACTION_SEND);
                 send.setType("text/plain");
-                send.putExtra(Intent.EXTRA_SUBJECT,"Sonoff S60 Lab Diagnostics");
+                send.putExtra(Intent.EXTRA_SUBJECT,"Діагностика Sonoff S60");
                 send.putExtra(Intent.EXTRA_TEXT,controller.log.asText());
                 startActivity(Intent.createChooser(send,"Поділитися діагностикою"));
             });
@@ -58,7 +58,7 @@ public final class MainActivity extends Activity {
             controller.begin();
         } catch(Exception e) {
             TextView t=new TextView(this);
-            t.setText("Sonoff S60 Lab cannot start: "+e.getClass().getSimpleName()+" "+e.getMessage());
+            t.setText("Не вдалося запустити застосунок: "+e.getClass().getSimpleName()+" "+e.getMessage());
             t.setPadding(25,50,25,25);setContentView(t);
         }
     }

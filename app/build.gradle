@@ -5,9 +5,9 @@ android {
     defaultConfig {
         applicationId 'com.mazko.sonoffs60'
         minSdk 26
-        targetSdk 28
-        versionCode 1
-        versionName '0.1.0-lan-lab'
+        targetSdk 35
+        versionCode 2
+        versionName '1.0.0-rc1'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

@@ -27,6 +27,7 @@ final class LanDiscovery {
     private NsdManager.DiscoveryListener listener;
     private WifiManager.MulticastLock lock;
     private volatile boolean running;
+    private volatile boolean forceQuery;
     private MulticastSocket socket;
     private Thread worker;
     private final Set<String> resolving=new HashSet<>();
@@ -42,7 +43,7 @@ final class LanDiscovery {
         log.add("SCAN", "Discovery start: Android NSD + passive/active mDNS 224.0.0.251:5353");
         try {
             WifiManager wifi=(WifiManager)context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-            lock=wifi.createMulticastLock("S60LabMdns");lock.setReferenceCounted(false);lock.acquire();
+            lock=wifi.createMulticastLock("SonoffS60Mdns");lock.setReferenceCounted(false);lock.acquire();
         } catch(Exception ex) {log.add("SCAN.WIFI", "Cannot acquire Wi-Fi multicast lock: "+ex.getClass().getSimpleName());}
         startNsd();
         worker=new Thread(this::multicastLoop,"S60-mDNS");worker.setDaemon(true);worker.start();
@@ -86,22 +87,26 @@ final class LanDiscovery {
             nsd.discoverServices("_ewelink._tcp.",NsdManager.PROTOCOL_DNS_SD,listener);
         } catch(Exception ex) {log.add("NSD.ERROR",ex.getClass().getSimpleName()+": "+ex.getMessage());}
     }
+    synchronized void rescan() {
+        if(!running){start();return;}
+        forceQuery=true;
+    }
     private void multicastLoop() {
         try {
             MulticastSocket s=new MulticastSocket(null);
             s.setReuseAddress(true);
             s.bind(new InetSocketAddress(5353));
-            s.setSoTimeout(3000);
+            s.setSoTimeout(1000);
             InetAddress group=InetAddress.getByName("224.0.0.251");
             s.joinGroup(group);
             socket=s;
             byte[] query=MdnsPacket.discoveryQuery();
             long lastQuery=0;
             while(running) {
-                if(System.currentTimeMillis()-lastQuery>9000) {
+                if(forceQuery || System.currentTimeMillis()-lastQuery>9000) {
                     try {s.send(new DatagramPacket(query,query.length,group,5353));}
                     catch(Exception e){log.add("MDNS.SEND",e.getClass().getSimpleName());}
-                    lastQuery=System.currentTimeMillis();
+                    lastQuery=System.currentTimeMillis();forceQuery=false;
                 }
                 byte[] bytes=new byte[9000];DatagramPacket packet=new DatagramPacket(bytes,bytes.length);
                 try {s.receive(packet);handle(packet);}
@@ -131,7 +136,8 @@ final class LanDiscovery {
             String ip=addressByHost.getOrDefault(hosts.getOrDefault(instance,""),"");
             String source="mDNS TXT + SRV/A";
             if(ip.isEmpty()) {
-                // Source-address recovery only for direct device packets with matching service TXT.
+                // Only infer direct same-LAN sender; never trust public/loopback multicast relays as device hosts.
+                if(!p.getAddress().isSiteLocalAddress() && !p.getAddress().isLinkLocalAddress())continue;
                 ip=p.getAddress().getHostAddress();source="mDNS TXT + UDP source fallback (no A record)";
                 log.add("MDNS.NO_A",deviceId+" used packet source "+ip+"; verify if network uses mDNS relay");
             }

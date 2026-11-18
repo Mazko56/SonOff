@@ -10,12 +10,13 @@ final class S60Device {
     String lastSource = "";
     int port = 8081;
     boolean encrypted = true;
-    boolean simulator = false;
     boolean hasKey = false;
     boolean modelConfirmed = false; // mDNS service does not reliably identify retail S60 model
     long lastSeen = System.currentTimeMillis();
     long lastData = 0;
     String error = "";
+    String pending = "";
+    long pendingSince = 0;
     JSONObject values = new JSONObject();
     S60Device(String id) { this.id = id; }
     private Object metric(String name, double multiplier) {
@@ -27,10 +28,14 @@ final class S60Device {
         JSONObject j = new JSONObject()
                 .put("id", id).put("ip", ip).put("port",port)
                 .put("type", localType).put("encrypted",encrypted)
-                .put("simulator",simulator).put("hasKey",hasKey).put("modelConfirmed",modelConfirmed)
+                .put("hasKey",hasKey).put("modelConfirmed",modelConfirmed)
                 .put("lastSeen", lastSeen).put("lastData",lastData)
-                .put("online", simulator || System.currentTimeMillis()-lastSeen<65000)
+                .put("online", System.currentTimeMillis()-lastSeen<90000)
                 .put("source",lastSource).put("error",error)
+                .put("pending",pending).put("pendingSince",pendingSince)
+                .put("firmware",values.optString("fwVersion",""))
+                .put("led",values.has("sledOnline") ? values.optString("sledOnline") : JSONObject.NULL)
+                .put("startup",getStartup())
                 .put("power",metric("power",.01)).put("voltage",metric("voltage",.01))
                 .put("current",metric("current",.01))
                 .put("dayKwh",metric("dayKwh",.01)).put("monthKwh",metric("monthKwh",.01))
@@ -40,6 +45,14 @@ final class S60Device {
         if (switches!=null && switches.length()>0) relay = "on".equals(switches.optJSONObject(0).optString("switch"));
         else if (values.has("switch")) relay = "on".equals(values.optString("switch"));
         return j.put("relay",relay);
+    }
+    private Object getStartup() {
+        JSONArray config=values.optJSONArray("configure");
+        if(config!=null)for(int i=0;i<config.length();i++) {
+            JSONObject item=config.optJSONObject(i);
+            if(item!=null && item.optInt("outlet",-1)==0)return item.optString("startup","stay");
+        }
+        return JSONObject.NULL;
     }
     void apply(JSONObject src) {
         if (src==null) return;
@@ -54,5 +67,11 @@ final class S60Device {
         }
         lastData=System.currentTimeMillis();
         error="";
+        if(!pending.isEmpty()) {
+            JSONArray switches=values.optJSONArray("switches");
+            JSONObject first=switches!=null?switches.optJSONObject(0):null;
+            String confirmed=first!=null?first.optString("switch"):values.optString("switch","");
+            if(pending.equals(confirmed))pending="";
+        }
     }
 }

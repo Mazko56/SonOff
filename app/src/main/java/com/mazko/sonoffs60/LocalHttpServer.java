@@ -102,12 +102,13 @@ final class LocalHttpServer {
             if(count!=length)throw new Exception("Truncated request body");
             JSONObject payload=length==0?new JSONObject():new JSONObject(new String(raw,StandardCharsets.UTF_8));
             switch(path) {
-                case "/api/scan":controller.begin();json(out,202,new JSONObject().put("ok",true));break;
-                case "/api/simulator":controller.setSimulator(payload.optBoolean("enabled",false));json(out,200,new JSONObject().put("ok",true));break;
+                case "/api/scan":controller.rescan();json(out,202,new JSONObject().put("ok",true));break;
                 case "/api/confirm":controller.confirmModel(payload.optString("id"));json(out,200,new JSONObject().put("ok",true));break;
                 case "/api/devicekey":controller.saveKey(payload.optString("id"),payload.optString("key"));json(out,200,new JSONObject().put("ok",true));break;
                 case "/api/relay":controller.relay(payload.optString("id"),payload.optBoolean("on"));json(out,202,new JSONObject().put("queued",true));break;
                 case "/api/poll":controller.poll(payload.optString("id"));json(out,202,new JSONObject().put("queued",true));break;
+                case "/api/led":controller.led(payload.optString("id"),payload.optBoolean("on"));json(out,202,new JSONObject().put("queued",true));break;
+                case "/api/startup":controller.startup(payload.optString("id"),payload.optString("mode"));json(out,202,new JSONObject().put("queued",true));break;
                 default:json(out,404,new JSONObject().put("error","No API route"));
             }
         } catch(Exception e) {

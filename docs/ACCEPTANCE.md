@@ -1,14 +1,17 @@
-# Real S60TPF acceptance — do not confuse simulated with physical testing
+# Checklist реального приймання Sonoff S60TPF
 
-1. Photograph/check label of device (must be **S60TPF** standard Wi-Fi, not `S60TPF-M` Matter or `S60ZBTPF` Zigbee).
-2. Record firmware version via official eWeLink app; preserve its configuration and pairing.
-3. Phone on same LAN, Wi-Fi multicast working. Observe `DEVICE.FOUND` and actual measured IP without manual input; verify against router if source fallback.
-4. Obtain key through authorized existing eWeLink channel. Store only in app using encrypted preferences; do not share.
-5. Observe a `MDNS.DECRYPT.OK` or `LAN.REPLY.STATE` event with non-simulated readings; compare voltage/current/power with eWeLink.
-6. With safe lamp plugged in: turn ON via app; verify physical power and status in BOTH app and eWeLink. Turn OFF and repeat.
-7. Toggle device physically and from eWeLink; app eventually updates after mDNS or polling. Compare source timestamps.
-8. Verify eWeLink cloud/offline modes, no re-pair, no firmware change, no disrupted status (10+ operations).
-9. Export redacted logs and measure command response rate and delays; classify failures (discovery/key/HTTP/response/state).
-10. **Mandatory independent check:** does device itself initiate a connection to phone server? Expected on stock eWeLink firmware: **NO**, because phone is client to device HTTP server. This request should be renegotiated explicitly rather than marked "passed".
+Ці пункти перевіряються лише з **фізичною Wi-Fi S60TPF**, не емулятором. Перед тестом зніміть фото точного маркування й версію прошивки, але не передавайте ключ доступу.
 
-Passing the Python mock tests or in-app simulator cannot close items 3-10.
+- [ ] Запуск Android APK на телефоні без аварій та неправильних дозволів.
+- [ ] Автоматичне визначення S60TPF у тій самій Wi-Fi-мережі без IP.
+- [ ] Визначення після зміни IP DHCP і перезавантаження роутера.
+- [ ] Якщо потрібен індивідуальний ключ, авторизоване введення ключа один раз.
+- [ ] Перевірка реальних показників: V, A, W, kWh, RSSI (якщо поля видані по LAN).
+- [ ] Реле ON та OFF підтверджене фактичним перемиканням і зміною стану, а не лише HTTP 200.
+- [ ] Одночасна робота з eWeLink: штатні операції та моніторинг не перервані.
+- [ ] Тести з доступним інтернетом і з відключеним інтернетом (але LAN живе).
+- [ ] Виявлення помилки неправильного devicekey, експортування логів.
+- [ ] Прибрати індикатор «очікуємо підтвердження» після відповіді або показати помилку тайм-ауту.
+- [ ] Перевірити повторну роботу після закриття і відкриття застосунку.
+
+**Окремо:** вимога «розетка сама ініціює підключення до локального вебсервера Android» — НЕ виконана штатним еWeLink LAN дизайном, потребує узгодження з замовником. Не представляти наявний APK як доказ реалізації цієї вимоги.
