@@ -28,6 +28,11 @@ final class LanDiscovery {
     private WifiManager.MulticastLock lock;
     private volatile boolean running;
     private volatile boolean forceQuery;
+    private volatile boolean rawSocketReady;
+    private volatile boolean nsdReady;
+    private volatile String discoveryError="";
+    boolean isSearchReady(){return rawSocketReady||nsdReady;}
+    String getSearchError(){return discoveryError;}
     private MulticastSocket socket;
     private Thread worker;
     private final Set<String> resolving=new HashSet<>();
@@ -39,7 +44,7 @@ final class LanDiscovery {
     }
     synchronized void start() {
         if(running)return;
-        running=true;
+        running=true;rawSocketReady=false;nsdReady=false;discoveryError="";
         log.add("SCAN", "Discovery start: Android NSD + passive/active mDNS 224.0.0.251:5353");
         try {
             WifiManager wifi=(WifiManager)context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
@@ -52,7 +57,7 @@ final class LanDiscovery {
         try {
             nsd=(NsdManager)context.getSystemService(Context.NSD_SERVICE);
             listener=new NsdManager.DiscoveryListener() {
-                @Override public void onDiscoveryStarted(String t) {log.add("NSD", "Service browser started: "+t);}
+                @Override public void onDiscoveryStarted(String t) {nsdReady=true;log.add("NSD", "Service browser started: "+t);}
                 @Override public void onServiceFound(NsdServiceInfo info) {
                     String deviceId=id(info.getServiceName());
                     if(deviceId.isEmpty())return;
@@ -81,7 +86,7 @@ final class LanDiscovery {
                 }
                 @Override public void onServiceLost(NsdServiceInfo info) {log.add("NSD.LOST",id(info.getServiceName()));}
                 @Override public void onDiscoveryStopped(String t) {log.add("NSD","stopped");}
-                @Override public void onStartDiscoveryFailed(String t,int code) {log.add("NSD.ERROR","start code="+code);}
+                @Override public void onStartDiscoveryFailed(String t,int code) {nsdReady=false;discoveryError="Android NSD failed ("+code+")";log.add("NSD.ERROR","start code="+code);}
                 @Override public void onStopDiscoveryFailed(String t,int code) {log.add("NSD.ERROR","stop code="+code);}
             };
             nsd.discoverServices("_ewelink._tcp.",NsdManager.PROTOCOL_DNS_SD,listener);
@@ -99,7 +104,7 @@ final class LanDiscovery {
             s.setSoTimeout(1000);
             InetAddress group=InetAddress.getByName("224.0.0.251");
             s.joinGroup(group);
-            socket=s;
+            socket=s;rawSocketReady=true;
             byte[] query=MdnsPacket.discoveryQuery();
             long lastQuery=0;
             while(running) {
@@ -114,7 +119,10 @@ final class LanDiscovery {
                 catch(Exception ex) {if(running)log.add("MDNS.ERROR",ex.getClass().getSimpleName()+" "+ex.getMessage());}
             }
             s.close();
-        } catch(Exception e) {if(running)log.add("MDNS.BIND.ERROR",e.getClass().getSimpleName()+" "+e.getMessage());}
+        } catch(Exception e) {
+            rawSocketReady=false;discoveryError="mDNS UDP bind failed: "+e.getClass().getSimpleName();
+            if(running)log.add("MDNS.BIND.ERROR",e.getClass().getSimpleName()+" "+e.getMessage());
+        }
     }
     private void handle(DatagramPacket p) throws Exception {
         List<MdnsPacket.Record> list=MdnsPacket.parse(p.getData(),p.getLength());
@@ -141,11 +149,13 @@ final class LanDiscovery {
                 ip=p.getAddress().getHostAddress();source="mDNS TXT + UDP source fallback (no A record)";
                 log.add("MDNS.NO_A",deviceId+" used packet source "+ip+"; verify if network uses mDNS relay");
             }
-            controller.onDiscover(deviceId,ip,ports.getOrDefault(instance,8081),r.txt,source);
+            String sender=p.getAddress().getHostAddress();
+            if(!p.getAddress().isSiteLocalAddress() && !p.getAddress().isLinkLocalAddress())sender="";
+            controller.onDiscover(deviceId,ip,ports.getOrDefault(instance,8081),r.txt,source,sender);
         }
     }
     synchronized void stop() {
-        running=false;
+        running=false;rawSocketReady=false;nsdReady=false;
         if(socket!=null)socket.close();
         if(nsd!=null && listener!=null) {
             try{nsd.stopServiceDiscovery(listener);}catch(Exception ignored){}

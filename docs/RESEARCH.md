@@ -1,64 +1,44 @@
-# Дослідження Sonoff S60 і Android LAN (18.11.2026)
+# Дослідження Sonoff S60TPF / eWeLink LAN
 
-## Основні висновки
+Перевірено ключові **першоджерела** (документація виробника, власники реалізацій протоколу та issue-трекери). Це не доказ перегляду 100 окремих незалежних джерел; не можна створювати видимість цього числа.
 
-- S60TPF — це штатна Wi-Fi модель із можливістю керування, моніторингу споживання та індикації через eWeLink. S60TPF-M (Matter) та S60ZBTPF (Zigbee) відрізняються протоколами. Прямий контроль цього APK обмежено S60TPF.
-- SonoffLAN зберігає оригінальну прошивку й дозволяє LAN/Cloud одночасно. За версією SonoffLAN UIID 190 має `switches`, `current`, `power`, `voltage`, `dayKwh`, `monthKwh`, `configure`, `sledOnline`, `rssi`.
-- Шифрований LAN-протокол: Android відкриває з'єднання до HTTP-сервера розетки, `http://IP:8081/zeroconf/<command>`; mDNS `_ewelink._tcp.local`; AES-128-CBC на основі MD5(devicekey). Ключ потрібно отримати авторизовано.
-- Специфічна проблема деяких S60TPF: анонси mDNS містять SRV+TXT, але не A-record. Це потребує резервної обробки адреси; навіть workaround має обмеження при multicast-relay. Система не повинна вводити IP вручну як основний маршрут.
-- `getState` на деяких прошивках лише підтверджує доступність і не надає дані; показники необхідно приймати із повідомлень про стан. Деколи використовується ідемпотентний запит `sledonline` з поточним станом індикатора для примусового оновлення.
-- Android 17 додає локальні мережеві дозволи для застосунків із targetSdk >=37. Ця збірка targetSdk 35.
-- Жоден із перевірених офіційних матеріалів не підтверджує, що штатна S60TPF сама може ініціювати підключення до стороннього локального сервера телефона без зміни конфігурації/прошивки; поточна архітектура реалізує пряме локальне керування з телефона, але НЕ цю буквально сформульовану вимогу.
+## Базова модель
 
-## Основні перевірені публічні джерела
+- SONOFF S60TPF: Wi-Fi; оригінальний eWeLink. Не плутати з S60ZBTPF (Zigbee) або S60TPF-M (Matter).
+- SonoffLAN описує UIID 190 і `localtype=plug`, підтримку relays, LED, startup, power/current/voltage і day/month energy.
+- Напруга/струм/потужність у протоколі масштабуються ×0.01; day/month kWh ×0.01. Залежить від фактично одержаних параметрів.
+- SonoffLAN використовує `POST http://<device-ip>:8081/zeroconf/<command>`, deviceid, selfApikey, sequence та devicekey; параметри в AES-128-CBC (MD5-derived 128-bit AES key). Перевірено прикладом шифрування з симулятором.
+- Для UIID 190 реле: `/zeroconf/switches` з `switches:[{outlet:0,switch:"on"|"off"}],operSide:1`, а не загальна команда `/zeroconf/switch`.
+- `configure` command with `{configure:"get"}` читає налаштування. Змінювати їх треба тільки якщо розетка підтвердила `configure`.
+- TXT/SRV можуть надходити без A-record. Джерело UDP може бути резервною адресою тільки після порівняння та невдалої спроби TCP з опублікованою адресою. Рефлектори mDNS можуть повертати IP посередника — це не універсальна гарантія.
 
-1. SONOFF official manual S60TPF — https://support.sonoff.tech/s60tpf-usermanual/
-2. SONOFF official manual S60TPF-M — https://support.sonoff.tech/s60tpf-m-usermanual/
-3. SONOFF official manual S60ZBTPF — https://support.sonoff.tech/s60zbtpf-usermanual/
-4. SONOFF EU Data Act equipment list — https://sonoff.tech/en-eu/pages/eu-data-act
-5. SONOFF iPlug Wi-Fi S60 catalog — https://sonoff.tech/
-6. SonoffLAN README — https://github.com/AlexxIT/SonoffLAN
-7. SonoffLAN SUPPORTED DEVICES — https://github.com/AlexxIT/SonoffLAN/blob/master/DEVICES.md
-8. SonoffLAN local transport implementation — https://github.com/AlexxIT/SonoffLAN/blob/master/custom_components/sonoff/core/ewelink/local.py
-9. SonoffLAN devices/UIID 190 mapping — https://github.com/AlexxIT/SonoffLAN/blob/master/custom_components/sonoff/core/devices.py
-10. SonoffLAN S60TPF missing A-record — https://github.com/AlexxIT/SonoffLAN/issues/1871
-11. SonoffLAN S60TPF LAN problem — https://github.com/AlexxIT/SonoffLAN/issues/1772
-12. SonoffLAN firmware notes / releases — https://github.com/AlexxIT/SonoffLAN/releases
-13. SonoffLAN local switch behaviors and telemetry issue — https://github.com/AlexxIT/SonoffLAN/issues/975
-14. SonoffLAN energy telemetry issue — https://github.com/AlexxIT/SonoffLAN/issues/1114
-15. SonoffLAN getState issues — https://github.com/AlexxIT/SonoffLAN/issues/1442
-16. SonoffLAN getState issues — https://github.com/AlexxIT/SonoffLAN/issues/1907
-17. eWeLink official API docs — https://github.com/CoolKit-Technologies/eWeLink-API/blob/main/en/APICenterV2.md
-18. eWeLink community LAN client — https://github.com/nocmt/ewelink-api-next/blob/main/docs/en/LAN-Control.md
-19. Homebridge eWeLink LAN implementation notes — https://github.com/homebridge-plugins/homebridge-ewelink/blob/latest/CLAUDE.md
-20. Sonoff-local (independent cross-check) — https://github.com/jcarcaboso/sonoff-local
-21. Android official local network permission — https://developer.android.com/privacy-and-security/local-network-permission
-22. Android official NsdManager API — https://developer.android.com/reference/android/net/nsd/NsdManager
-23. Android official Android 17 behavior — https://developer.android.com/about/versions/17/behavior-changes-17
-24. GitHub official setup-android Action — https://github.com/android-actions/setup-android
-25. SONOFF official product information — https://sonoff.tech/products/sonoff-iplug-zigbee-smart-plug-s60-series
+## Ключ доступу
 
-*Перелік містить ключові першоджерела та перехресні підтвердження, а не вигадану «100-відсоткову перевірку за 100 джерелами». Заявляти 100 перевірених джерел було б некоректно: достовірність залежить від виробника, реалізацій протоколу та фізичного тесту, а не від кількості сторінок.*
+`devicekey` — секрет заводського протоколу, а не загальновідомий ключ і не пароль Wi-Fi. Без eWeLink-авторизації чи одноразового власницького надання ключа немає легітимного універсального способу «просто знайти пристрій і отримати криптографічний контроль». Офіційний API eWeLink повертає `devicekey` у списку пристроїв за належних прав застосунку/користувача. OAuth інтеграція потребує app credentials, згоди користувача, перевірки API та безпечного зберігання токенів. Вбудовувати секрет розробника без бекенду в публічний APK не можна.
 
-## Архітектура
+## Додаткові можливості
 
-```
-SONOFF S60TPF (eWeLink firmware)    Wi-Fi router       Android
-   mDNS multicast: TXT/SRV ───────────────┬────────→ mDNS/NSD listener
-   HTTP LAN server: :8081 ◀───────────────┼────────── encrypted LAN HTTP commands
-   eWeLink cloud connection ──────────────┼────────── unaffected by APK
-                                          └─────────── Android loopback HTTP: :18765
-                                                       WebView UI + diagnostics
-```
+Виробник може показувати в eWeLink графіки, розклад, таймери, inching, cloud automation. Наявність UI-кнопки eWeLink не доводить наявність локального API для цього параметра. Цей APK реалізує лише відомі LAN команди та приховує непідтверджені функції.
 
-### Чого НЕ можна гарантувати
+## Першоджерела і технічні кейси
 
-- Стопроцентного виявлення в мережах з ізоляцією клієнтів або multicast-фільтрами.
-- Необмеженого керування «без введення будь-чого»: індивідуальний ключ — частина захисту пристрою.
-- Повного енергетичного архіву, якщо прошивка не видає ці дані через LAN.
-- Підключення розетки «як клієнта» до вебсервера телефона без зовнішньої зміни її налаштувань: це інша модель комунікації, не підтверджена штатним протоколом.
-- Безперебійної роботи у фоні за Android battery restrictions: наразі activity-scoped scanning.
+1. https://support.sonoff.tech/s60tpf-usermanual/
+2. https://support.sonoff.tech/s60tpf-m-usermanual/
+3. https://github.com/AlexxIT/SonoffLAN
+4. https://github.com/AlexxIT/SonoffLAN/blob/master/DEVICES.md
+5. https://github.com/AlexxIT/SonoffLAN/blob/master/custom_components/sonoff/core/devices.py
+6. https://github.com/AlexxIT/SonoffLAN/blob/master/custom_components/sonoff/core/ewelink/local.py
+7. https://github.com/AlexxIT/SonoffLAN/blob/master/custom_components/sonoff/select.py
+8. https://github.com/AlexxIT/SonoffLAN/issues/1871
+9. https://github.com/AlexxIT/SonoffLAN/issues/1772
+10. https://github.com/AlexxIT/SonoffLAN/issues/1907
+11. https://github.com/AlexxIT/SonoffLAN/issues/1759
+12. https://github.com/jcarcaboso/sonoff-local
+13. https://github.com/CoolKit-Technologies/eWeLink-API/blob/main/en/APICenterV2.md
+14. https://dev.ewelink.cc/
+15. https://github.com/itead/Sonoff_Devices_DIY_Tools
+16. https://developer.android.com/reference/android/net/nsd/NsdManager
+17. https://developer.android.com/reference/android/net/wifi/WifiManager.MulticastLock
+18. https://tech.scargill.net/the-brand-new-sonoff-iplug-s60tpf-type-f-e-wifi-smart-plug/
 
-## Legacy Sonoff-Server.zip
-
-Архів `Sonoff-Server-master.zip` від користувача — приклад старого cloud endpoint replacement, орієнтованого на Sonoff Basic. Його підхід із перехопленням хмарного сервера не використовується: сучасний certificate pinning і вимога зберегти штатну eWeLink роботу роблять його непридатним для S60TPF.
+Значна частина посилань — до одного проєкту SonoffLAN, а не 18 незалежних підтверджень. У разі суперечностей пріоритет: конкретна прошивка реальної S60TPF, офіційні описи виробника та перевірені трасування LAN із цієї моделі.

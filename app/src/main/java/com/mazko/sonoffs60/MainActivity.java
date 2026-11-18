@@ -28,7 +28,7 @@ public final class MainActivity extends Activity {
                 Intent send=new Intent(Intent.ACTION_SEND);
                 send.setType("text/plain");
                 send.putExtra(Intent.EXTRA_SUBJECT,"Діагностика Sonoff S60");
-                send.putExtra(Intent.EXTRA_TEXT,controller.log.asText());
+                send.putExtra(Intent.EXTRA_TEXT,controller.diagnosticReport()+"\n"+controller.log.asText());
                 startActivity(Intent.createChooser(send,"Поділитися діагностикою"));
             });
         }
@@ -48,19 +48,24 @@ public final class MainActivity extends Activity {
             settings.setAllowContentAccess(false);
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
             web.addJavascriptInterface(new NativeApi(),"SonoffNative");
+            final int localPort=panel.getPort();
             web.setWebViewClient(new WebViewClient() {
                 @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest r) {
-                    return !"127.0.0.1".equals(r.getUrl().getHost()) || r.getUrl().getPort()!=18765;
+                    return !"127.0.0.1".equals(r.getUrl().getHost()) || r.getUrl().getPort()!=localPort;
                 }
             });
             setContentView(web);
-            web.loadUrl("http://127.0.0.1:18765/");
+            web.loadUrl("http://127.0.0.1:"+localPort+"/");
             controller.begin();
         } catch(Exception e) {
             TextView t=new TextView(this);
             t.setText("Не вдалося запустити застосунок: "+e.getClass().getSimpleName()+" "+e.getMessage());
             t.setPadding(25,50,25,25);setContentView(t);
         }
+    }
+    @Override public void onResume() {
+        super.onResume();
+        if(controller!=null)controller.rescan();
     }
     @Override public void onDestroy() {
         if(controller!=null)controller.close();

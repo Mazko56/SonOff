@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 
 DEVICE_ID = '1000abcdef'
-STATE = {'switches': [{'outlet': 0, 'switch': 'off'}], 'power': 0, 'current': 0, 'voltage': 23124, 'dayKwh': 17, 'monthKwh': 112, 'rssi': -43}
+STATE = {'switches': [{'outlet': 0, 'switch': 'off'}], 'power': 0, 'current': 0, 'voltage': 23124, 'dayKwh': 17, 'monthKwh': 112, 'rssi': -43, 'sledOnline': 'on', 'configure': [{'outlet': 0, 'startup': 'stay'}]}
 
 
 def encrypt_obj(plain: dict, secret: str):
@@ -109,6 +109,24 @@ def make_handler(secret):
                             answer = {'error': 0, 'seq': int(time.time()), **encrypt_obj(STATE, secret)}
                     elif cmd == 'getState':
                         answer = {'error': 0, 'seq': int(time.time()), **encrypt_obj(STATE, secret)}
+                    elif cmd == 'sledonline':
+                        if data.get('sledOnline') not in ('on', 'off'):
+                            answer = {'error': 400}
+                        else:
+                            STATE['sledOnline'] = data['sledOnline']
+                            answer = {'error': 0, 'seq': int(time.time()), **encrypt_obj(STATE, secret)}
+                    elif cmd == 'configure':
+                        if data.get('configure') == 'get':
+                            answer = {'error': 0, 'seq': int(time.time()), **encrypt_obj({'configure': STATE['configure']}, secret)}
+                        elif isinstance(data.get('configure'),list):
+                            opts=data['configure']
+                            if len(opts)!=1 or opts[0].get('outlet')!=0 or opts[0].get('startup') not in ('on','off','stay'):
+                                answer = {'error': 400}
+                            else:
+                                STATE['configure'] = opts
+                                answer = {'error': 0, 'seq': int(time.time()), **encrypt_obj({'configure': STATE['configure']}, secret)}
+                        else:
+                            answer = {'error': 400}
                     else:
                         answer = {'error': 404}
                 raw = json.dumps(answer, separators=(',', ':')).encode()

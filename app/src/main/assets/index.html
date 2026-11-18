@@ -15,43 +15,76 @@ main{max-width:860px;margin:auto;padding:env(safe-area-inset-top) 18px 92px}.top
 </div>
 <div id="helpScreen" class="hide">
 <div class="tabbar"><button class="selected" onclick="setTab('home')">← Пристрої</button></div>
-<section class="panel"><h2 style="margin-top:0">Як підключитися</h2><p class="muted">Розетка й телефон мають бути підключені до однієї домашньої Wi-Fi-мережі. Попередньо додайте розетку через офіційний eWeLink, не змінюючи її прошивку.</p><p class="muted">Пошук працює автоматично, без введення IP-адреси. Для першого керування захищеною розеткою потрібен її індивідуальний ключ доступу.</p><button onclick="setTab('home')">Повернутися до пристроїв</button></section>
-<section class="panel"><div class="support-head"><h3>Діагностика</h3><button class="small" onclick="getLogs()">Оновити</button></div><p class="muted">Якщо розетка не відповідає, збережіть журнал і надішліть його розробнику. Дані доступу до розетки в нього не записуються.</p><button class="accent" onclick="shareLogs()">Поділитися журналом</button><div id="logText" class="log">Журнал порожній</div><p class="subtle">Перед надсиланням перевірте записи: вони можуть містити локальні IP-адреси та ID пристроїв.</p></section>
+<section class="panel"><h2 style="margin-top:0">Як підключитися</h2><p class="muted">Розетка й телефон мають бути підключені до однієї домашньої Wi-Fi-мережі. Попередньо додайте розетку через офіційний eWeLink, не змінюючи її прошивку.</p><p class="muted">Розетка знаходиться автоматично. Після першого підтвердження доступу підключення відновлюється без додаткових дій.</p><p class="muted">Для нового пристрою індивідуальний ключ можна отримати через авторизований обліковий запис eWeLink або сумісну інтеграцію SonoffLAN. У звичайному застосунку eWeLink цей ключ може не відображатися. Не передавайте його стороннім особам.</p><button onclick="setTab('home')">Повернутися до пристроїв</button></section>
+<section class="panel"><div class="support-head"><h3>Діагностика</h3><button class="small" onclick="getLogs()">Оновити</button></div><p class="muted">Якщо розетка не відповідає, збережіть журнал і надішліть його розробнику. Дані доступу до розетки в нього не записуються.</p><button class="accent" onclick="shareLogs()">Поділитися журналом</button><div id="diagnosticSummary" class="notice">Перевіряємо стан підключення…</div><details style="margin-top:12px"><summary class="muted" style="cursor:pointer">Детальний журнал</summary><div id="logText" class="log">Журнал порожній</div></details><p class="subtle">Перед надсиланням перевірте записи: вони можуть містити локальні IP-адреси та ID пристроїв.</p></section>
 </div>
 <div id="toast" role="status"></div>
 </main><script>
-'use strict';let state={devices:[]};let editing=false,working=false,toastTimeout;
+'use strict';
+let state={devices:[]};let busy=false;let tab='home';let openKey=new Set(),openSettings=new Set();let toastTimer;
 const el=id=>document.getElementById(id);
 const token=window.SonoffNative?String(window.SonoffNative.getAuthToken()):'';
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function toast(msg){const t=el('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>t.classList.remove('show'),4500)}
-function setTab(which){el('homeScreen').classList.toggle('hide',which!=='home');el('helpScreen').classList.toggle('hide',which!=='help');window.scrollTo(0,0);if(which==='help')getLogs();}
-async function action(path,body){if(working)return false;working=true;try{const r=await fetch(path,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Sonoff-Panel':'1','X-Sonoff-Token':token},body:JSON.stringify(body)});const result=await r.json();if(!r.ok)throw Error(result.error||'Пристрій не відповів');await refresh();return true}catch(e){toast(e.message||'Не вдалося виконати дію');return false}finally{working=false}}
-function num(v,suffix){return v===null||v===undefined?'—':`${Number(v).toLocaleString('uk-UA',{maximumFractionDigits:2})} <small>${suffix}</small>`}
-function metric(name,v,unit){return `<div class="metric"><b>${num(v,unit)}</b><span>${name}</span></div>`}
-function render(){if(document.activeElement&&document.activeElement.tagName==='INPUT')return;const ds=state.devices||[];el('deviceCount').textContent=ds.length?`${ds.length} знайдено`:'Немає пристроїв';el('networkNote').textContent=ds.length?'Пристрої виявлено у вашій мережі':'Шукаємо розетки у вашій Wi-Fi-мережі';
-if(!ds.length){el('devices').innerHTML=`<div class="panel empty"><span class="symbol">⌁</span><h3>Розетку ще не знайдено</h3><p>Переконайтеся, що телефон підключений до тієї ж Wi-Fi-мережі, що й Sonoff S60, та спробуйте ще раз.</p><button class="accent" onclick="action('/api/scan',{})">Повторити пошук</button></div>`;return}
-el('devices').innerHTML=ds.sort((a,b)=>b.online-a.online).map(d=>{let ready=!d.encrypted||d.hasKey, ok=d.online&&ready&&d.modelConfirmed&&!!d.ip, hasData=d.lastData>0, fresh=hasData&&(Date.now()-d.lastData<120000), pending=d.pending&&(Date.now()-d.pendingSince<12000);
-const status=!d.online?'Немає зв’язку':!ready?'Потрібне підключення':!hasData?'Очікуємо дані':fresh?'Підключено':'Очікуємо оновлення';
-const statusClass=!d.online?'lost':!ready||!fresh?'wait':'';
-const relayText=!fresh?'Стан поки невідомий':d.relay===true?'Увімкнено':d.relay===false?'Вимкнено':'Очікуємо стан';
-const statusError=d.error&&d.error!=='DECRYPT_FAILED'?d.error:d.error==='DECRYPT_FAILED'?'Не вдалося прочитати дані. Перевірте ключ доступу.':'';
-const startOptions=[['stay','Останній стан'],['on','Увімкнено'],['off','Вимкнено']];
-return `<article class="panel"><div class="head"><div><div class="subtle">Розумна розетка</div><div class="device-title">Sonoff S60</div><div class="subtle">Керування та споживання електроенергії</div></div><span class="status ${statusClass}">${esc(status)}</span></div>
-${!d.modelConfirmed?`<div class="notice"><strong>Перевірте модель</strong><div>Підтвердьте, що на корпусі написано S60TPF (Wi-Fi), а не S60ZBTPF чи S60TPF-M.</div><div style="margin-top:10px"><button class="small accent" onclick="confirmModel('${d.id}')">Це S60TPF</button></div></div>`:''}
-${!ready?`<div class="notice"><strong>Для керування потрібен ключ доступу</strong><div>Він захищає зв’язок із вашою розеткою. Додаток збереже його лише на телефоні.</div><label for="key_${d.id}" class="form-label">Ключ пристрою</label><div class="keyrow"><input type="password" id="key_${d.id}" placeholder="Вставити ключ" autocomplete="off"><button class="accent" onclick="saveKey('${d.id}')">Зберегти</button></div></div>`:''}
-${statusError?`<div class="notice error">${esc(statusError)} <button class="small flat" onclick="setTab('help')">Діагностика</button></div>`:''}
-<div class="relay"><div><strong>${pending?'Очікуємо підтвердження…':relayText}</strong><div><span>${!hasData?'Після підключення показники з’являться тут':fresh?'Стан із розетки':'Останнє оновлення було давно'}</span></div></div><span style="font-size:22px">⏻</span></div>
-<div class="metrics">${metric('Потужність',hasData?d.power:null,'Вт')}${metric('Напруга',hasData?d.voltage:null,'В')}${metric('Струм',hasData?d.current:null,'А')}${metric('За сьогодні',hasData?d.dayKwh:null,'кВт·год')}${metric('За місяць',hasData?d.monthKwh:null,'кВт·год')}${metric('Сигнал Wi-Fi',hasData?d.rssi:null,'dBm')}</div>
-<div class="actions"><button class="on" ${!ok||!!pending?'disabled':''} onclick="relay('${d.id}',true)">Увімкнути</button><button class="off" ${!ok||!!pending?'disabled':''} onclick="relay('${d.id}',false)">Вимкнути</button><button ${!ready||!d.online?'disabled':''} onclick="action('/api/poll',{id:'${d.id}'})">↻</button></div>
-${ok&&(d.led!==null||d.startup!==null)?`<details style="margin-top:17px"><summary class="muted" style="cursor:pointer">Налаштування розетки</summary>${d.led!==null?`<div class="row"><span>Світловий індикатор</span><button class="small" onclick="action('/api/led',{id:'${d.id}',on:${d.led==='on'?'false':'true'}})">${d.led==='on'?'Вимкнути':'Увімкнути'}</button></div>`:''}${d.startup!==null?`<div class="row"><span>Після відновлення живлення</span><select onchange="changeStartup('${d.id}',this.value)">${startOptions.map(o=>`<option value="${o[0]}" ${d.startup===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>`:''}</details>`:''}
-</article>`}).join('');}
-async function refresh(){try{const r=await fetch('/api/state',{cache:'no-store',headers:{'X-Sonoff-Token':token}});if(!r.ok)throw Error('Connection unavailable');state=await r.json();render();}catch(e){el('networkNote').textContent='Застосунок не може оновити дані';}}
-async function getLogs(){try{const r=await fetch('/api/logs',{cache:'no-store',headers:{'X-Sonoff-Token':token}});const a=await r.json();el('logText').textContent=(a.lines||[]).join('\n')||'Подій поки немає';}catch(e){el('logText').textContent='Не вдалося завантажити журнал';}}
-async function saveKey(id){let i=el('key_'+id);if(!i||!i.value.trim()){toast('Вставте ключ доступу');return}let value=i.value;i.value='';if(await action('/api/devicekey',{id,key:value}))toast('Ключ збережено. Очікуємо дані від розетки.');}
-async function confirmModel(id){if(await action('/api/confirm',{id}))toast('Модель підтверджено');}
-async function relay(id,on){if(await action('/api/relay',{id,on}))toast('Команду надіслано. Перевіряємо підтвердження від розетки.');}
-async function changeStartup(id,mode){if(await action('/api/startup',{id,mode}))toast('Налаштування надіслано на розетку');}
-function shareLogs(){if(window.SonoffNative&&window.SonoffNative.shareLogs)window.SonoffNative.shareLogs();else toast('Передавання журналу доступне в Android-застосунку');}
-refresh();setInterval(refresh,3000);
+function toast(msg){const t=el('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),5200)}
+function setTab(which){tab=which;el('homeScreen').classList.toggle('hide',which!=='home');el('helpScreen').classList.toggle('hide',which!=='help');window.scrollTo(0,0);if(which==='help')getLogs()}
+async function action(path,data){if(busy)return false;busy=true;try{
+ const response=await fetch(path,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Sonoff-Panel':'1','X-Sonoff-Token':token},body:JSON.stringify(data)});
+ const result=await response.json();if(!response.ok)throw Error(result.error||'Не вдалося виконати дію.');
+ await refresh();return true;
+}catch(e){toast(e.message||'Немає зв’язку з пристроєм');return false}finally{busy=false}}
+function num(v,u){return v===null||v===undefined||!Number.isFinite(Number(v))?'—':`${Number(v).toLocaleString('uk-UA',{maximumFractionDigits:2})} <small>${u}</small>`}
+function metric(n,v,u){return `<div class="metric"><b>${num(v,u)}</b><span>${n}</span></div>`}
+function stashOpen(){for(const d of document.querySelectorAll('details[data-settings]')){if(d.open)openSettings.add(d.dataset.settings);else openSettings.delete(d.dataset.settings)}}
+function render(){if(tab!=='home')return;
+ const focused=document.activeElement;
+ if(focused&&(focused.tagName==='INPUT'||focused.tagName==='SELECT'))return;
+ stashOpen();const devices=(state.devices||[]).slice().sort((a,b)=>Number(b.online)-Number(a.online));
+ el('deviceCount').textContent=devices.length?`${devices.length} знайдено`:'0';
+ el('networkNote').textContent=devices.length?'Пристрої у вашій мережі':'Пошук починається автоматично';
+ if(!devices.length){el('devices').innerHTML='<div class="panel empty"><span class="symbol">⌁</span><h3>Шукаємо вашу розетку</h3><p>Перевірте, що телефон підключений до тієї самої Wi-Fi-мережі. Пошук не потребує введення IP-адреси.</p><button class="accent" onclick="action(\'/api/scan\',{})">Повторити пошук</button><button style="margin-left:8px" onclick="setTab(\'help\')">Допомога</button></div>';return}
+ el('devices').innerHTML=devices.map(d=>{
+ const haveData=d.lastData>0 && Date.now()-d.lastData<120000;
+ const canAct=!!d.canControl && !!d.online && haveData;
+ const pending=!!d.pending && Date.now()-d.pendingSince<16000;
+ const keyMissing=d.encrypted&&!d.hasKey;
+ const notAuthed=d.hasKey&&!d.authenticated;
+ const status=!d.online?'Поза мережею':keyMissing?'Потрібне підключення':!haveData?'Очікуємо стан':!d.authenticated?'Перевіряємо доступ':'Підключено';
+ const statusClass=!d.online?'lost':!canAct?'wait':'';
+ const relayText=haveData?(d.relay===true?'Увімкнено':d.relay===false?'Вимкнено':'Очікуємо дані'):'Стан невідомий';
+ const options=[['stay','Попередній стан'],['on','Увімкнено'],['off','Вимкнено']];
+ const settings=canAct&&(d.led!==null||d.startup!==null);
+ const err=!!d.errorCode&&!!d.error;
+ const needSetup=keyMissing||!!d.errorCode&&d.errorCode==='INVALID_DEVICE_KEY';
+ return `<article class="panel"><div class="head"><div><div class="subtle">Розумна розетка · ${esc(d.id.slice(-4))}</div><div class="device-title">Sonoff</div><div class="subtle">Живлення та споживання енергії</div></div><span class="status ${statusClass}">${esc(status)}</span></div>
+ ${needSetup?`<div class="notice"><strong>Підключення до розетки</strong><div>Для першого захищеного підключення потрібне підтвердження власника. Після збереження доступу повторно вводити його не доведеться.</div><div class="keyrow" style="margin-top:12px"><input type="password" id="key_${d.id}" placeholder="Ключ доступу" autocomplete="off"><button class="accent" onclick="saveKey('${d.id}')">Підключити</button></div><button class="small flat" style="margin-top:7px" onclick="setTab('help')">Як отримати доступ?</button></div>`:''}
+ ${err?`<div class="notice error"><strong>${esc(d.error)}</strong>${d.errorAdvice?`<div style="margin-top:5px">${esc(d.errorAdvice)}</div>`:''}<button class="small flat" style="margin-top:8px" onclick="setTab('help')">Переглянути діагностику</button></div>`:''}
+ <div class="relay"><div><strong>${pending?'Очікуємо підтвердження…':relayText}</strong><div><span>${haveData?'Останній отриманий стан':notAuthed?'Перевіряємо захищене з’єднання':'Дані з’являться після підключення'}</span></div></div><span style="font-size:22px">⏻</span></div>
+ <div class="metrics">${metric('Потужність',haveData?d.power:null,'Вт')}${metric('Напруга',haveData?d.voltage:null,'В')}${metric('Струм',haveData?d.current:null,'А')}${metric('Сьогодні',haveData?d.dayKwh:null,'кВт·год')}${metric('За місяць',haveData?d.monthKwh:null,'кВт·год')}${metric('Сигнал Wi-Fi',haveData?d.rssi:null,'dBm')}</div>
+ <div class="actions"><button class="on" ${!canAct||pending?'disabled':''} onclick="relay('${d.id}',true)">Увімкнути</button><button class="off" ${!canAct||pending?'disabled':''} onclick="relay('${d.id}',false)">Вимкнути</button><button title="Оновити показники" ${!d.online||keyMissing?'disabled':''} onclick="action('/api/poll',{id:'${d.id}'})">↻</button></div>
+ ${settings?`<details data-settings="${d.id}" ${openSettings.has(d.id)?'open':''} style="margin-top:18px"><summary class="muted" style="cursor:pointer">Додаткові налаштування</summary>${d.led!==null?`<div class="row"><span>Індикатор на корпусі</span><button class="small" onclick="action('/api/led',{id:'${d.id}',on:${d.led==='on'?'false':'true'}})">${d.led==='on'?'Вимкнути':'Увімкнути'}</button></div>`:''}${d.startup!==null?`<div class="row"><span>Після відновлення живлення</span><select onchange="changeStartup('${d.id}',this.value)">${options.map(o=>`<option value="${o[0]}" ${o[0]===d.startup?'selected':''}>${o[1]}</option>`).join('')}</select></div>`:''}</details>`:''}
+ </article>`;
+ }).join('');
+}
+async function refresh(){try{let r=await fetch('/api/state',{cache:'no-store',headers:{'X-Sonoff-Token':token}});if(!r.ok)throw Error('unavailable');state=await r.json();render()}catch(e){el('networkNote').textContent='Не вдалося оновити стан. Відкрийте «Допомога».'}}
+async function getLogs(){
+  const ds=state.devices||[];
+  const msg=ds.length?ds.map(d=>{
+    let phase=d.error?`<strong>${esc(d.error)}</strong><p>${esc(d.errorAdvice||'Відкрийте журнал для подробиць.')}</p>`:
+       !d.hasKey&&d.encrypted?'Потрібне перше підтвердження доступу. Після цього розетка підключатиметься автоматично.':
+       d.authenticated?'Захищене з’єднання встановлено.':'Знайдено пристрій. Очікуємо відповідь.';
+    const found=Date.now()-d.lastSeen<90000?'Виявлено у мережі':'Немає свіжого повідомлення';
+    const data=d.lastData>0?'Показники отримано':'Показників ще немає';
+    const relay=d.relay===null?'Стан реле невідомий':d.relay===true?'Реле ввімкнене':'Реле вимкнене';
+    return `<p><strong>Розетка ${esc(d.id.slice(-4))}</strong></p><p>Пошук: ${found}<br>Дані: ${data}<br>Керування: ${relay}</p><p>${phase}</p>`;
+  }).join('<hr style="border:0;border-top:1px solid #3d465a">'):
+  (state.searchReady?'Мережевий пошук працює, але пристроїв ще не виявлено. Перевірте Wi-Fi, eWeLink LAN Control та ізоляцію клієнтів у роутері.':'Мережевий пошук не запустився. Перевірте підключення до Wi-Fi, дозволи Android і повторіть пошук.');
+  el('diagnosticSummary').innerHTML=msg;
+  try{const r=await fetch('/api/logs',{cache:'no-store',headers:{'X-Sonoff-Token':token}});if(!r.ok)throw Error();const a=await r.json();el('logText').textContent=(a.lines||[]).join('\n')||'Подій поки немає'}
+  catch(e){el('logText').textContent='Не вдалося завантажити журнал'}
+}
+async function saveKey(id){const field=el('key_'+id);if(!field||!field.value.trim()){toast('Введіть ключ для першого підключення');return}const key=field.value;field.value='';field.blur();if(await action('/api/devicekey',{id,key}))toast('Доступ збережено. Встановлюємо зв’язок…')}
+async function relay(id,on){if(await action('/api/relay',{id,on}))toast('Команду передано. Чекаємо підтвердження розетки.')}
+async function changeStartup(id,mode){if(await action('/api/startup',{id,mode}))toast('Налаштування передано. Перевіряємо відповідь розетки.')}
+function shareLogs(){if(window.SonoffNative&&window.SonoffNative.shareLogs)window.SonoffNative.shareLogs();else toast('Поширення доступне у застосунку Android')}
+refresh();setInterval(refresh,2500);
 </script></body></html>

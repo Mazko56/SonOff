@@ -1,17 +1,13 @@
-# Verification report — 2026-11-18
+# Verification report — RC2, 2026-11-18
 
-| Check | Result | What it actually proves |
-|---|---|---|
-| Python cryptography roundtrip for LAN AES-CBC and negative wrong-key test | PASS | Our fake protocol supports encryption/decryption roundtrip |
-| Python local fake S60 POST /zeroconf/switches -> on, then /zeroconf/getState | PASS | Simulated service correctly changes and reports state |
-| Python fake mDNS packet with no A record | PASS | Test fixture emits PTR, SRV, encrypted TXT and optional missing-A case |
-| Java MdnsPacket parser on no-A TXT+SRV packet from Python | PASS | Java parser handles fake advertised encrypted mDNS state and source fallback can be attempted |
-| Java sources compiled against local lightweight Android API stubs (not Android SDK) | PASS SYNTAX ONLY | Does not replace real Android Gradle compilation or verify Android API compatibility |
-| Browser preview UI inline JavaScript syntax and simulated relay ON using headless Chromium | PASS | UI renders and transitions in the pure browser mock |
-| Android APK assembled and installed | NOT RUN | Android SDK/Gradle unavailable in authoring container |
-| Physical Sonoff S60TPF discovery and control | NOT RUN | Physical device not available |
-| eWeLink co-existence and zero firmware impact | NOT RUN | Needs verification with real S60TPF |
-| Plug-initiated connection to phone-hosted server | NOT IMPLEMENTED | Stock LAN protocol is in opposite direction; not confirmed supported by firmware |
-| Automatic encrypted control without devicekey/onboarding | NOT IMPLEMENTED | Would bypass per-device encryption authentication; requires authorized key retrieval |
+- **Java syntax against lightweight Android API stubs:** PASS (`javac -encoding UTF-8`), but **not a real Android Gradle build**.
+- **Android mDNS TXT/SRV-without-A packet self-test:** PASS (`MdnsPacketSelfTest`).
+- **Protocol test suite:** PASS, 3 unit/integration tests covering MD5/AES-128-CBC, malformed or missing A record, encrypted ON/OFF, getState, LED switch, configure read and startup change. This runs against `tests/fake_s60.py`, **not a real S60**.
+- **HTML embedded JavaScript parse check:** PASS (`node --check`).
+- **AndroidManifest.xml and XML launcher:** PASS (`xml.etree.ElementTree` parse).
+- **GitHub Actions YAML parse:** PASS (`PyYAML` parse).
+- **Real Android APK build:** NOT RUN in current environment (no Android SDK/Gradle).
+- **Actual S60TPF firmware, eWeLink coexistence, real power data, and device→phone server initiation:** NOT TESTED / NOT CONFIRMED.
+- **OAuth devicekey acquisition without initial manual entry:** NOT IMPLEMENTED (requires authorized eWeLink Developer API credentials and app-specific authorization design).
 
-Tests and code are prototypes; no hardware or production guarantee is implied.
+See docs/ACCEPTANCE.md for the hardware checklist. A successful simulator test cannot be represented as verified hardware compatibility.

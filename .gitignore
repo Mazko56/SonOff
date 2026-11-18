@@ -1,0 +1,15 @@
+# Build outputs and secrets — never commit firmware keys or APK builds
+.gradle/
+**/build/
+*.apk
+*.aab
+local.properties
+.idea/
+*.iml
+*.jks
+*.keystore
+*.key
+*.env
+__pycache__/
+*.pyc
+.DS_Store

@@ -26,15 +26,16 @@ final class LocalHttpServer {
     private final ExecutorService clients=Executors.newFixedThreadPool(4);
     LocalHttpServer(Context context,Controller controller,String authToken) {this.context=context;this.controller=controller;this.log=controller.log;this.authToken=authToken;}
     void start() throws Exception {
-        listener=new ServerSocket(18765,8,InetAddress.getByName("127.0.0.1"));
+        listener=new ServerSocket(0,8,InetAddress.getByName("127.0.0.1"));
         worker=new Thread(()-> {
             while(!listener.isClosed()) {
                 try {Socket s=listener.accept();clients.execute(()->handle(s));}
                 catch(Exception e){if(!listener.isClosed())log.add("PANEL.SERVER",e.getClass().getSimpleName());}
             }
         },"S60-panel-server");worker.setDaemon(true);worker.start();
-        log.add("PANEL.SERVER","Bound to http://127.0.0.1:18765 only; no LAN remote access");
+        log.add("PANEL.SERVER","Secure loopback UI bound to 127.0.0.1:"+listener.getLocalPort());
     }
+    int getPort(){return listener.getLocalPort();}
     void stop() {
         try{if(listener!=null)listener.close();}catch(Exception ignored){}
         clients.shutdownNow();

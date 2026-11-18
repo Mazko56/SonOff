@@ -6,6 +6,8 @@ import org.json.JSONObject;
 final class S60Device {
     final String id;
     String ip = "";
+    String fallbackIp = "";
+    long lastStatusLog = 0;
     String localType = "";
     String lastSource = "";
     int port = 8081;
@@ -13,6 +15,13 @@ final class S60Device {
     boolean hasKey = false;
     boolean modelConfirmed = false; // mDNS service does not reliably identify retail S60 model
     long lastSeen = System.currentTimeMillis();
+    long lastHttpOk = 0;
+    long lastRequest = 0;
+    long lastAutoProbe = 0;
+    long lastConfigurationQuery = 0;
+    boolean authenticated = false;
+    String errorCode = "";
+    String errorAdvice = "";
     long lastData = 0;
     String error = "";
     String pending = "";
@@ -28,10 +37,14 @@ final class S60Device {
         JSONObject j = new JSONObject()
                 .put("id", id).put("ip", ip).put("port",port)
                 .put("type", localType).put("encrypted",encrypted)
-                .put("hasKey",hasKey).put("modelConfirmed",modelConfirmed)
-                .put("lastSeen", lastSeen).put("lastData",lastData)
+                .put("hasKey",hasKey).put("authenticated",authenticated)
+                .put("modelConfirmed",modelConfirmed)
+                .put("lastSeen", lastSeen).put("lastData",lastData).put("lastHttpOk",lastHttpOk)
                 .put("online", System.currentTimeMillis()-lastSeen<90000)
                 .put("source",lastSource).put("error",error)
+                .put("errorCode",errorCode).put("errorAdvice",errorAdvice)
+                .put("ready", authenticated && System.currentTimeMillis()-lastData<120000)
+                .put("canControl",authenticated && System.currentTimeMillis()-lastData<120000 && !ip.isEmpty() && (localType.isEmpty() || "plug".equals(localType)) && (values.has("switch") || values.optJSONArray("switches")!=null))
                 .put("pending",pending).put("pendingSince",pendingSince)
                 .put("firmware",values.optString("fwVersion",""))
                 .put("led",values.has("sledOnline") ? values.optString("sledOnline") : JSONObject.NULL)
@@ -66,7 +79,8 @@ final class S60Device {
             try { values.put(k,src.get(k)); } catch(Exception ignored) { }
         }
         lastData=System.currentTimeMillis();
-        error="";
+        error="";errorCode="";errorAdvice="";
+        authenticated=true;
         if(!pending.isEmpty()) {
             JSONArray switches=values.optJSONArray("switches");
             JSONObject first=switches!=null?switches.optJSONObject(0):null;
