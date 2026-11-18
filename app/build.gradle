@@ -6,8 +6,8 @@ android {
         applicationId 'com.mazko.sonoffs60'
         minSdk 26
         targetSdk 35
-        versionCode 3
-        versionName '1.0.0-rc2'
+        versionCode 4
+        versionName '1.0.1-rc2'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

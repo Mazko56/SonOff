@@ -8,15 +8,18 @@ main{max-width:860px;margin:auto;padding:env(safe-area-inset-top) 18px 92px}.top
 .panel{background:linear-gradient(160deg,#1b2639,#151d2c);border:1px solid #29364b;border-radius:22px;padding:21px;margin-bottom:17px;box-shadow:0 7px 25px var(--shadow)}.heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:25px 1px 13px}.heading h2{font-size:15px;margin:0;color:#bdcbe2;font-weight:700}.muted{color:var(--muted);font-size:13px}.status{border-radius:100px;font-size:12px;font-weight:700;padding:6px 10px;background:#203e38;color:var(--green);display:inline-block}.status.lost{background:#3d2d2e;color:var(--red)}.status.wait{background:#413b2c;color:var(--amber)}.head{display:flex;align-items:center;justify-content:space-between;gap:8px}.device-title{margin:4px 0;font-weight:750;font-size:21px;letter-spacing:-.4px}.subtle{font-size:12px;color:#91a3c1}.relay{border:1px solid #334158;background:#111b2b;border-radius:16px;padding:16px;margin-top:18px;display:flex;align-items:center;justify-content:space-between;gap:10px}.relay strong{font-size:17px}.relay span{font-size:13px;color:var(--muted)}.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:13px 0 18px}.metric{background:#111b2a;border:1px solid #29364e;border-radius:14px;padding:15px 11px;min-width:0}.metric b{font-size:22px;font-weight:800;letter-spacing:-.65px;display:block;white-space:nowrap}.metric b small{font-size:11px;font-weight:500;color:var(--muted);letter-spacing:0}.metric span{display:block;color:var(--muted);font-size:12px;margin-top:5px}.actions{display:flex;gap:10px}.actions button{flex:1}.notice{padding:13px 14px;margin:15px 0;background:#252a39;border:1px solid #3d465a;border-radius:13px;color:#d9e2f2;font-size:13px}.notice.error{background:#35262e;border-color:#633847;color:#ffb7bf}.notice strong{color:white}.form-label{font-size:13px;color:#c3d1e8;display:block;margin:8px 0}.keyrow{display:flex;gap:9px}.keyrow input{flex:1;min-width:0}.support-head{display:flex;align-items:center;justify-content:space-between}.support-head h3{font-size:15px;margin:0}.row{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:14px}.row button,.row select{max-width:195px}.hide{display:none!important}.empty{text-align:center;padding:36px 15px}.empty .symbol{display:block;font-size:42px;color:#b4c9ff;margin-bottom:7px}.empty h3{font-size:18px;margin:6px 0}.empty p{color:var(--muted);font-size:14px;max-width:380px;margin:9px auto 22px}.footer{font-size:12px;color:#8295b5;text-align:center;margin-top:30px}.log{max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-word;font:11px/1.7 ui-monospace,Consolas,monospace;background:#080f1a;border:1px solid #2a3445;border-radius:13px;padding:12px;color:#c5d4ed;margin-top:14px}.tabbar{display:flex;gap:9px;margin-bottom:17px}.tabbar button{flex:1}.tabbar .selected{background:#294e90;border-color:#567dbf}.indicator{width:9px;height:9px;border-radius:50%;background:var(--green);display:inline-block;margin-right:5px}.indicator.no{background:var(--amber)}#toast{position:fixed;z-index:40;bottom:22px;left:18px;right:18px;max-width:810px;margin:auto;background:#293c59;padding:14px;border:1px solid #5271a3;border-radius:14px;box-shadow:0 15px 32px #0009;display:none}#toast.show{display:block}
 @media(max-width:430px){main{padding-left:13px;padding-right:13px}.panel{padding:17px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metric b{font-size:21px}.row button,.row select{max-width:52%}.top h1{font-size:21px}}
 </style></head><body><main>
-<header class="top"><div class="brand-icon">S</div><div><h1>Sonoff S60</h1><p>Пристрої вашого дому</p></div><button class="flat small" onclick="setTab('help')" aria-label="Діагностика">Допомога</button></header>
+<header class="top"><div class="brand-icon">S</div><div><h1>Sonoff S60</h1><p>Пристрої вашого дому</p></div><button class="flat small" onclick="setTab('help')" aria-label="Допомога">Допомога</button></header>
 <div id="homeScreen">
 <section class="panel"><div class="head"><div><strong>Пошук пристроїв</strong><div id="networkNote" class="muted">Шукаємо розетки поруч у мережі Wi-Fi</div></div><button class="accent small" onclick="action('/api/scan',{})">↻ Шукати</button></div></section>
 <div class="heading"><h2>Мої пристрої</h2><span id="deviceCount" class="muted">0</span></div><div id="devices"></div>
 </div>
 <div id="helpScreen" class="hide">
 <div class="tabbar"><button class="selected" onclick="setTab('home')">← Пристрої</button></div>
-<section class="panel"><h2 style="margin-top:0">Як підключитися</h2><p class="muted">Розетка й телефон мають бути підключені до однієї домашньої Wi-Fi-мережі. Попередньо додайте розетку через офіційний eWeLink, не змінюючи її прошивку.</p><p class="muted">Розетка знаходиться автоматично. Після першого підтвердження доступу підключення відновлюється без додаткових дій.</p><p class="muted">Для нового пристрою індивідуальний ключ можна отримати через авторизований обліковий запис eWeLink або сумісну інтеграцію SonoffLAN. У звичайному застосунку eWeLink цей ключ може не відображатися. Не передавайте його стороннім особам.</p><button onclick="setTab('home')">Повернутися до пристроїв</button></section>
-<section class="panel"><div class="support-head"><h3>Діагностика</h3><button class="small" onclick="getLogs()">Оновити</button></div><p class="muted">Якщо розетка не відповідає, збережіть журнал і надішліть його розробнику. Дані доступу до розетки в нього не записуються.</p><button class="accent" onclick="shareLogs()">Поділитися журналом</button><div id="diagnosticSummary" class="notice">Перевіряємо стан підключення…</div><details style="margin-top:12px"><summary class="muted" style="cursor:pointer">Детальний журнал</summary><div id="logText" class="log">Журнал порожній</div></details><p class="subtle">Перед надсиланням перевірте записи: вони можуть містити локальні IP-адреси та ID пристроїв.</p></section>
+<section class="panel">
+  <div class="support-head"><h3>Журнал подій</h3><button class="small" onclick="getLogs()">Оновити</button></div>
+  <div class="actions" style="margin-top:15px"><button class="accent" onclick="shareLogs()">Поділитися журналом</button></div>
+  <details style="margin-top:17px"><summary class="muted" style="cursor:pointer">Переглянути події</summary><div id="logText" class="log">Подій поки немає</div></details>
+</section>
 </div>
 <div id="toast" role="status"></div>
 </main><script>
@@ -56,8 +59,8 @@ function render(){if(tab!=='home')return;
  const err=!!d.errorCode&&!!d.error;
  const needSetup=keyMissing||!!d.errorCode&&d.errorCode==='INVALID_DEVICE_KEY';
  return `<article class="panel"><div class="head"><div><div class="subtle">Розумна розетка · ${esc(d.id.slice(-4))}</div><div class="device-title">Sonoff</div><div class="subtle">Живлення та споживання енергії</div></div><span class="status ${statusClass}">${esc(status)}</span></div>
- ${needSetup?`<div class="notice"><strong>Підключення до розетки</strong><div>Для першого захищеного підключення потрібне підтвердження власника. Після збереження доступу повторно вводити його не доведеться.</div><div class="keyrow" style="margin-top:12px"><input type="password" id="key_${d.id}" placeholder="Ключ доступу" autocomplete="off"><button class="accent" onclick="saveKey('${d.id}')">Підключити</button></div><button class="small flat" style="margin-top:7px" onclick="setTab('help')">Як отримати доступ?</button></div>`:''}
- ${err?`<div class="notice error"><strong>${esc(d.error)}</strong>${d.errorAdvice?`<div style="margin-top:5px">${esc(d.errorAdvice)}</div>`:''}<button class="small flat" style="margin-top:8px" onclick="setTab('help')">Переглянути діагностику</button></div>`:''}
+ ${needSetup?`<div class="notice"><strong>Підключення до розетки</strong><div>Для першого захищеного підключення потрібне підтвердження власника. Після збереження доступу повторно вводити його не доведеться.</div><div class="keyrow" style="margin-top:12px"><input type="password" id="key_${d.id}" placeholder="Ключ доступу" autocomplete="off"><button class="accent" onclick="saveKey('${d.id}')">Підключити</button></div></div>`:''}
+ ${err?`<div class="notice error"><strong>${esc(d.error)}</strong>${d.errorAdvice?`<div style="margin-top:5px">${esc(d.errorAdvice)}</div>`:''}<button class="small flat" style="margin-top:8px" onclick="setTab('help')">Журнал подій</button></div>`:''}
  <div class="relay"><div><strong>${pending?'Очікуємо підтвердження…':relayText}</strong><div><span>${haveData?'Останній отриманий стан':notAuthed?'Перевіряємо захищене з’єднання':'Дані з’являться після підключення'}</span></div></div><span style="font-size:22px">⏻</span></div>
  <div class="metrics">${metric('Потужність',haveData?d.power:null,'Вт')}${metric('Напруга',haveData?d.voltage:null,'В')}${metric('Струм',haveData?d.current:null,'А')}${metric('Сьогодні',haveData?d.dayKwh:null,'кВт·год')}${metric('За місяць',haveData?d.monthKwh:null,'кВт·год')}${metric('Сигнал Wi-Fi',haveData?d.rssi:null,'dBm')}</div>
  <div class="actions"><button class="on" ${!canAct||pending?'disabled':''} onclick="relay('${d.id}',true)">Увімкнути</button><button class="off" ${!canAct||pending?'disabled':''} onclick="relay('${d.id}',false)">Вимкнути</button><button title="Оновити показники" ${!d.online||keyMissing?'disabled':''} onclick="action('/api/poll',{id:'${d.id}'})">↻</button></div>
@@ -67,20 +70,14 @@ function render(){if(tab!=='home')return;
 }
 async function refresh(){try{let r=await fetch('/api/state',{cache:'no-store',headers:{'X-Sonoff-Token':token}});if(!r.ok)throw Error('unavailable');state=await r.json();render()}catch(e){el('networkNote').textContent='Не вдалося оновити стан. Відкрийте «Допомога».'}}
 async function getLogs(){
-  const ds=state.devices||[];
-  const msg=ds.length?ds.map(d=>{
-    let phase=d.error?`<strong>${esc(d.error)}</strong><p>${esc(d.errorAdvice||'Відкрийте журнал для подробиць.')}</p>`:
-       !d.hasKey&&d.encrypted?'Потрібне перше підтвердження доступу. Після цього розетка підключатиметься автоматично.':
-       d.authenticated?'Захищене з’єднання встановлено.':'Знайдено пристрій. Очікуємо відповідь.';
-    const found=Date.now()-d.lastSeen<90000?'Виявлено у мережі':'Немає свіжого повідомлення';
-    const data=d.lastData>0?'Показники отримано':'Показників ще немає';
-    const relay=d.relay===null?'Стан реле невідомий':d.relay===true?'Реле ввімкнене':'Реле вимкнене';
-    return `<p><strong>Розетка ${esc(d.id.slice(-4))}</strong></p><p>Пошук: ${found}<br>Дані: ${data}<br>Керування: ${relay}</p><p>${phase}</p>`;
-  }).join('<hr style="border:0;border-top:1px solid #3d465a">'):
-  (state.searchReady?'Мережевий пошук працює, але пристроїв ще не виявлено. Перевірте Wi-Fi, eWeLink LAN Control та ізоляцію клієнтів у роутері.':'Мережевий пошук не запустився. Перевірте підключення до Wi-Fi, дозволи Android і повторіть пошук.');
-  el('diagnosticSummary').innerHTML=msg;
-  try{const r=await fetch('/api/logs',{cache:'no-store',headers:{'X-Sonoff-Token':token}});if(!r.ok)throw Error();const a=await r.json();el('logText').textContent=(a.lines||[]).join('\n')||'Подій поки немає'}
-  catch(e){el('logText').textContent='Не вдалося завантажити журнал'}
+  try {
+    const r=await fetch('/api/logs',{cache:'no-store',headers:{'X-Sonoff-Token':token}});
+    if(!r.ok)throw Error();
+    const a=await r.json();
+    el('logText').textContent=(a.lines||[]).join('\n')||'Подій поки немає';
+  } catch(e) {
+    el('logText').textContent='Не вдалося завантажити журнал';
+  }
 }
 async function saveKey(id){const field=el('key_'+id);if(!field||!field.value.trim()){toast('Введіть ключ для першого підключення');return}const key=field.value;field.value='';field.blur();if(await action('/api/devicekey',{id,key}))toast('Доступ збережено. Встановлюємо зв’язок…')}
 async function relay(id,on){if(await action('/api/relay',{id,on}))toast('Команду передано. Чекаємо підтвердження розетки.')}
