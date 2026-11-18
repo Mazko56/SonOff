@@ -29,6 +29,8 @@ final class Controller {
     private final ScheduledExecutorService refresh=Executors.newSingleThreadScheduledExecutor();
     private final AtomicLong sequence=new AtomicLong(System.currentTimeMillis());
     private volatile long lastDiscoveryAt=System.currentTimeMillis();
+    private volatile long lastApAttempt=0;
+    private volatile boolean lastApConnected=false;
     private LanDiscovery discovery;
     Controller(Context context) {
         appContext=context.getApplicationContext();
@@ -44,6 +46,23 @@ final class Controller {
                   now-d.lastAutoProbe>20000 && (now-d.lastData>23000 || now-d.lastHttpOk>30000)) {
                 d.lastAutoProbe=now;
                 network.execute(() -> request(d,"getState",new JSONObject(),false));
+            }
+            // Try first-party device AP pairing automatically, only on its dedicated subnet.
+            // Ordinary home Wi-Fi must NOT trigger a request to 10.10.7.1.
+            boolean ap=LocalPairingProbe.canReadFromDeviceAp(appContext);
+            if(!ap) {
+                if(lastApConnected)log.add("PAIR.NETWORK", "Exited device setup Wi-Fi; returning to LAN discovery");
+                lastApConnected=false;lastApAttempt=0;
+            } else {
+                if(!lastApConnected)log.add("PAIR.NETWORK", "Device setup Wi-Fi detected; verifying local onboarding support");
+                lastApConnected=true;
+                if(lastApAttempt==0 || now-lastApAttempt>90000) {
+                    lastApAttempt=now;
+                    network.execute(() -> {
+                        try {tryLocalOnboarding();}
+                        catch(Exception ex) { /* The reason was recorded in LOCAL.PAIR.UNAVAILABLE */ }
+                    });
+                }
             }
             if(now-lastDiscoveryAt>180000) {lastDiscoveryAt=now;discovery.rescan();}
         },10,12,TimeUnit.SECONDS);
@@ -115,7 +134,10 @@ final class Controller {
                 mustProbe=true;
             }
         }
-        if(newDevice)log.add("DEVICE.FOUND",id+" host="+d.ip+":"+d.port+" type="+d.localType+" encrypted="+d.encrypted+" via "+from);
+        if(newDevice) {
+            log.add("DEVICE.FOUND",id+" host="+d.ip+":"+d.port+" type="+d.localType+" encrypted="+d.encrypted+" via "+from);
+            if(d.encrypted && !d.hasKey)log.add("ACCESS.NOT_YET_AUTHORIZED",id+" visible through discovery, but encrypted control requires authorized device access");
+        }
         final S60Device readyDevice=d;
         if(mustProbe) network.execute(()->{
             request(readyDevice,"getState",new JSONObject(),false);
@@ -139,7 +161,7 @@ final class Controller {
                         synchronized(this){
                             d.error="Не вдалося встановити захищений зв’язок.";
                             d.errorCode="INVALID_DEVICE_KEY";
-                            d.errorAdvice="Перевірте ключ цієї розетки в авторизованому eWeLink. IP вручну вводити не потрібно.";
+                            d.errorAdvice="Захищене підключення не підтверджено. Надішліть журнал подій.";
                             d.authenticated=false;
                         }
                         log.add("MDNS.DECRYPT.FAIL",id+" "+e.getClass().getSimpleName()+"; key invalid or unsupported firmware");
@@ -173,9 +195,8 @@ final class Controller {
             if(d.authenticated)requestConfiguration(d);
         });
     }
-    /** Never require the operator to type a secret: only read from the physically accessible device AP.
-     * The S60TPF stock firmware may not implement this legacy endpoint.
-     * Call only on a direct user interaction and only from the AP the user joined intentionally.
+    /** Only call on a Wi-Fi network verified to be using the device AP subnet.
+     * This is an optional local-first path, NOT a bypass of firmware authentication.
      */
     JSONObject tryLocalOnboarding() throws Exception {
         try {
@@ -194,7 +215,7 @@ final class Controller {
             return new JSONObject().put("ok",true).put("id",result.id)
                 .put("message","Дані локально збережено. Налаштування домашнього Wi-Fi ще не виконане; сумісність цього способу з S60TPF потрібно перевірити.");
         } catch(Exception e) {
-            log.add("LOCAL.PAIR.UNAVAILABLE",e.getClass().getSimpleName()+"; endpoint unsupported or device AP unreachable");
+            log.add("LOCAL.PAIR.UNAVAILABLE",e.getClass().getSimpleName()+"; no compatible key endpoint on device AP; "+e.getMessage());
             throw e;
         }
     }
@@ -311,7 +332,7 @@ final class Controller {
                     } else {
                         d.error="Розетка відхилила запит.";
                         d.errorCode=(error==401 || error==403)?"AUTH_REJECTED":"DEVICE_REJECTED";
-                        d.errorAdvice=(error==401 || error==403)?"Перевірте ключ доступу до цієї розетки.":"Перевірте, чи увімкнено LAN-керування у eWeLink та чи підтримує прошивка цю дію.";
+                        d.errorAdvice=(error==401 || error==403)?"Пристрій відхилив доступ. Надішліть журнал подій.":"Пристрій відхилив команду. Надішліть журнал подій.";
                         if(command.equals("switches"))d.pending="";
                     }
                 }
@@ -325,7 +346,7 @@ final class Controller {
                     log.add("LAN.REPLY.STATE",d.id+" cmd="+command+" reply state decrypted");
                 }catch(Exception e){
                     synchronized(this){d.authenticated=false;d.error="Не вдалося розшифрувати відповідь розетки.";
-                        d.errorCode="INVALID_DEVICE_KEY";d.errorAdvice="Перевірте ключ доступу або версію прошивки в eWeLink.";}
+                        d.errorCode="INVALID_DEVICE_KEY";d.errorAdvice="Не підтверджено доступ до пристрою. Надішліть журнал подій.";}
                     log.add("LAN.REPLY.DECRYPT.FAIL",d.id+" cmd="+command+" "+e.getClass().getSimpleName());
                 }
             } else if(response.optJSONObject("data")!=null) {
@@ -357,13 +378,13 @@ final class Controller {
             }
             String reason="NETWORK_ERROR";
             String message="Не вдалося зв’язатися з розеткою.";
-            String advice="Перевірте, що телефон і розетка в одній Wi-Fi-мережі та LAN Control увімкнено в eWeLink.";
+            String advice="Перевірте, чи телефон і розетка в одній мережі Wi-Fi.";
             if(e instanceof java.net.SocketTimeoutException){
                 reason="TIMEOUT";message="Розетка знайдена, але не відповідає.";
                 advice="Перевірте доступ у локальній мережі: ізоляцію Wi-Fi-клієнтів, правильність адреси розетки та її живлення.";
             }else if(e instanceof java.net.ConnectException){
                 reason="CONNECTION_REFUSED";message="Розетка не приймає підключення.";
-                advice="Перевірте LAN Control у eWeLink, порт пристрою та налаштування роутера.";
+                advice="Перевірте Wi-Fi-мережу й доступність розетки.";
             }else if(e instanceof java.net.NoRouteToHostException){
                 reason="NO_ROUTE";message="Немає мережевого маршруту до розетки.";
                 advice="Підключіть телефон до тієї ж Wi-Fi-мережі й вимкніть гостьову ізоляцію.";

@@ -1,62 +1,33 @@
-# Sonoff S60 — Android LAN Controller RC2
+# Sonoff S60 — Auto Local (experimental Android build)
 
-**Цільова модель:** SONOFF S60TPF Wi-Fi, UIID 190. **Не** Zigbee S60ZBTPF або Matter S60TPF-M.
+## Що реально реалізовано
 
-**Статус:** готовий вихідний код для збірки Android debug APK через GitHub Actions. Лабораторні тести пройдені. Жодного тесту зі справжньою фізичною S60TPF **не проведено** — 100% працездатність на обладнанні **не підтверджена**.
+- Автопошук через mDNS/NSD, резерв для пакетів без A-записів.
+- Локальне шифроване керування **лише після отримання законного devicekey**.
+- Збереження ключів Android Keystore (дані не передаються розробнику).
+- Автоматичне **обмежене зчитування** `/device` із точки доступу пристрою лише коли телефон реально одержав IPv4 `10.10.7.x/24`; на звичайному Wi-Fi запитів до `10.10.7.1` немає.
+- Короткий інтерфейс без тестових та технічних пояснювальних блоків; журнал подій і експорт доступні в «Допомога».
+- Вимірювання і керування в інтерфейсі лише з реально отриманих та підтверджених даних.
 
-## Доступний функціонал у застосунку
+## Що не реалізовано / не підтверджено
 
-- Автоматичний запуск пошуку при відкритті програми; кнопка повторного сканування; Android NSD + raw mDNS `_ewelink._tcp.local`.
-- Пошук через TXT/SRV/A та резерв за IP-адресою відправника mDNS, якщо опублікований A-запис помилковий чи відсутній. Жодного ручного IP.
-- Автопідключення **після першого підтвердження доступу**: `devicekey` зберігається Android Keystore і повторно вводити його не потрібно.
-- Пристрій опитується після виявлення. Періодичні запити та відновлення після тайм-аутів; запити до одного локального сервера виконуються послідовно.
-- Відображення фактично одержаних relay state, power, voltage, current, daily/monthly kWh, RSSI. Якщо інформація не отримана — показується прочерк, а не вигадане число.
-- Реле ON/OFF через `/zeroconf/switches`, перевірка дійсного підтвердження стану через mDNS або зашифровану відповідь.
-- LED через `/zeroconf/sledonline` **лише якщо поле повідомлено пристроєм**.
-- Power-on behavior через `/zeroconf/configure`, з попереднім запитом `configure:get`, **лише після підтвердження поля `configure`**.
-- Простий користувацький UI без кнопок симулятора і тестового режиму; діагностика винесена до «Допомога», де видно стадії підключення, підказки й журнал для передавання.
-- Локальна WebView-панель на випадковому TCP-порту `127.0.0.1` (сервер **не доступний іншим LAN-хостам**). Приватний токен для викликів API панелі.
-- Збереження секретів Android Keystore; експортні логи не містять `devicekey`.
+- Для **заводської S60TPF (не S60TPF-M)** офіційно не підтверджений `/device` AP endpoint. Отже автоматична первинна авторизація без eWeLink **не гарантується**.
+- Не реалізовано автоматичне передавання Wi-Fi SSID/пароля новій розетці; заводське первинне додавання до мережі без eWeLink не підтверджено.
+- Не доведено, що розетка сама може з'єднуватися із сервером телефона. Android-застосунок виступає LAN-клієнтом.
+- Не перевірено роботу із фізичною S60TPF; на симуляторі можна тестувати тільки протокол, не можливості заводської прошивки.
+- Для Matter-моделі S60TPF-M потрібен окремий стек Matter та процедура commissioning, їх цей додаток не реалізує.
 
-## Що неможливо чесно гарантувати в цій версії
+## Збірка
 
-1. **Перший доступ без будь-якої авторизації.** Штатна прошивка eWeLink шифрує керування із заводським `devicekey`. Пошук пристрою не надає цього ключа. Нині потрібне одноразове введення власником. Безручний початковий доступ потребує окремої OAuth/eWeLink Developer API інтеграції з належно отриманими обліковими даними розробника та згодою власника.
-2. **Розетка сама підключається до вебсервера телефона.** Штатний підтверджений режим працює навпаки: Android надсилає запити на сервер розетки на TCP 8081, одночасно отримуючи mDNS від розетки. Можливість змусити заводську S60TPF ініціювати з'єднання до довільного сервера без перепрошивання не доведено. Android-панель слухає лише loopback заради безпеки.
-3. **Усі функції eWeLink офлайн:** голосові інтеграції, розклади, історичні графіки, inching і хмарні сценарії не всі документовані як локальні команди S60TPF. Застосунок показує тільки доступні й перевірені в протоколі функції, а не кнопки-муляжі.
-4. **100% сумісність із невідомою прошивкою/іншою ревізією S60** без фізичного тесту.
-5. Фоновий моніторинг 24/7 з Android foreground service поки не розроблений. Пошук і опитування працюють, поки Activity активна. Закриття застосунку не має порушувати роботу штатного eWeLink.
+Вміст ZIP покласти безпосередньо в корінь GitHub-репозиторію. Використати `.github/workflows/build-apk.yml` або Android Studio (SDK 35, JDK 17). Успішна компіляція не підтверджує реальної сумісності.
 
-## Збірка APK
+## Документація
 
-Є GitHub Actions `.github/workflows/build-apk.yml`, що виконує `gradle --no-daemon --stacktrace assembleDebug` на Ubuntu із SDK 35 та Gradle 8.9. Після push у `main`: **Actions → Build Android debug APK → Artifacts → SonoffS60Lab-debug-apk**.
+- https://support.sonoff.tech/s60tpf-usermanual/
+- https://support.sonoff.tech/s60tpf-m-usermanual/
+- https://github.com/AlexxIT/SonoffLAN
+- https://github.com/AlexxIT/SonoffLAN/blob/master/DEVICES.md
+- https://sonoff.tech/blogs/news/no-tasmota-and-ewelink-cloud-to-control-the-sonoff-device-yes
+- https://github.com/CoolKit-Technologies/eWeLink-API/blob/main/en/OAuth2.0.md
 
-Рекомендовано тримати репозиторій приватним; не завантажуйте туди ні ключі, ні паролі. `.gitignore` виключає створені APK, але файл `app/app-debug.apk`, який був закомічений раніше, слід видалити зі staging командою `git rm --cached --ignore-unmatch app/app-debug.apk`.
-
-## Перевірки
-
-- `python -m unittest discover -s tests -p 'test_*.py' -v` — PASS (AES, mDNS, HTTP ON/OFF, getState, LED, configure).
-- `javac` із **заглушками Android API** — PASS (це не заміняє Android Gradle build).
-- `java MdnsPacketSelfTest` — PASS (mDNS TXT/SRV без A).
-- `node --check` та XML-синтаксис — PASS.
-- Debug APK **не зібраний у цьому середовищі**, Android SDK тут відсутній. Компіляція в GitHub Actions на цей RC2 ще не підтверджена.
-
-## Необхідне від власника розетки для фінальної перевірки
-
-- Точний артикул S60TPF із корпусу та версія прошивки з eWeLink.
-- Телефон і розетка в одній Wi-Fi мережі; eWeLink має вже працювати зі штатною прошивкою, LAN Control увімкнено.
-- Власник одноразово підтверджує доступ `devicekey` локально в застосунку. Не передає ключ розробнику.
-- Для діагностики: «Допомога» → «Поділитися журналом»; порівняти стан реле на корпусі, в eWeLink і в цьому застосунку.
-
-Деталі у `docs/RESEARCH.md` та `docs/ACCEPTANCE.md`.
-
-
-## Оновлення інтерфейсу 1.0.1
-
-- Розділ «Допомога» спрощено до журналу подій, оновлення та поширення.
-- Прибрано довідкові картки «Як підключитися», «Діагностика» та застереження перед надсиланням.
-- Експортний діагностичний звіт і фактичні записи логів залишено без змін: вони потрібні для аналізу збоїв підключення та керування.
-- Команди пристрою, шифрування, мережевий пошук та серверний код **не змінювалися**.
-
-## Version 1.1.0-localfirst-preview — first local-only onboarding probe
-
-Manual key field was removed from the **visible UI**, replaced with "Нова розетка" → "Локальне підключення". The app can **attempt** to read a key directly from a supported Sonoff pairing AP at `10.10.7.1/device` without uploading any credentials. This is read-only and the key is saved in Android Keystore. **Stock S60TPF support is unverified**, and this does **not** provision a new device into home Wi-Fi. It is not a complete no-cloud first-use solution; it reports unsupported firmware instead of claiming success. See `docs/LOCAL_FIRST.md` before testing. To commission stock S60TPF without eWeLink at all may require different hardware or owner-authorized firmware replacement.
+Старий протокол DIY Mode 2.0 був документований для BASICR3/RFR3/MINI/D1, не S60TPF. Пристрій не можна авторизувати простим приховуванням поля devicekey.

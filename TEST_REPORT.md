@@ -1,13 +1,10 @@
-# Verification report — RC2, 2026-11-18
+# Тестування локального Android-клієнта
 
-- **Java syntax against lightweight Android API stubs:** PASS (`javac -encoding UTF-8`), but **not a real Android Gradle build**.
-- **Android mDNS TXT/SRV-without-A packet self-test:** PASS (`MdnsPacketSelfTest`).
-- **Protocol test suite:** PASS, 3 unit/integration tests covering MD5/AES-128-CBC, malformed or missing A record, encrypted ON/OFF, getState, LED switch, configure read and startup change. This runs against `tests/fake_s60.py`, **not a real S60**.
-- **HTML embedded JavaScript parse check:** PASS (`node --check`).
-- **AndroidManifest.xml and XML launcher:** PASS (`xml.etree.ElementTree` parse).
-- **GitHub Actions YAML parse:** PASS (`PyYAML` parse).
-- **Real Android APK build:** NOT RUN in current environment (no Android SDK/Gradle).
-- **Actual S60TPF firmware, eWeLink coexistence, real power data, and device→phone server initiation:** NOT TESTED / NOT CONFIRMED.
-- **OAuth devicekey acquisition without initial manual entry:** NOT IMPLEMENTED (requires authorized eWeLink Developer API credentials and app-specific authorization design).
+Перевірка статичного коду й лабораторного протоколу не замінює реальну розетку.
 
-See docs/ACCEPTANCE.md for the hardware checklist. A successful simulator test cannot be represented as verified hardware compatibility.
+- Автоматичний пошук зберігається.
+- При звичайному Wi-Fi (наприклад 192.168.0.x) `LocalPairingProbe.readFromDeviceAp()` **не викликається**, 10.10.7.1 не опитується.
+- На Wi-Fi із локальною IPv4 10.10.7.x/24 вмикається обмежена GET-перевірка; результат може бути відмовою через відсутній endpoint у S60TPF.
+- `devicekey` із mDNS не вгадується, команди на зашифровані пристрої без ключа не надсилаються.
+- Симулятор `fake_s60.py` без AP-ендпоїнта на новому встановленні не дає повного керування — очікуваний результат.
+- Цей проєкт потребує реальної Android-збірки GitHub Actions і тесту на фізичному обладнанні.

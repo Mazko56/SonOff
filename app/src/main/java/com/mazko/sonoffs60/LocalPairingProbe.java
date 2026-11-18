@@ -4,6 +4,10 @@ import android.content.Context;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.LinkProperties;
+import android.net.LinkAddress;
+import java.net.Inet4Address;
+import java.net.InetAddress;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -25,16 +29,32 @@ final class LocalPairingProbe {
 
     private LocalPairingProbe() { }
 
-    static Result readFromDeviceAp(Context context) throws Exception {
+    /**
+     * Probe only when the actual Wi-Fi interface has a 10.10.7.x address.
+     * A regular home LAN (e.g. 192.168.0.x) must never be sent to 10.10.7.1.
+     * This does NOT guarantee S60TPF supports the legacy /device endpoint.
+     */
+    static Network connectedDeviceAp(Context context) {
         ConnectivityManager cm=(ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);
-        if(cm==null)throw new Exception("Мережеве підключення недоступне.");
-        Network chosen=null;
-        // Explicitly force the Wi-Fi network; on Wi-Fi APs without Internet Android may otherwise route via mobile data.
-        for(Network n:cm.getAllNetworks()) {
-            NetworkCapabilities caps=cm.getNetworkCapabilities(n);
-            if(caps!=null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {chosen=n;break;}
-        }
-        if(chosen==null)throw new Exception("Підключіться до Wi-Fi мережі самої розетки.");
+        if(cm==null)return null;
+        try {
+            for(Network n:cm.getAllNetworks()) {
+                NetworkCapabilities caps=cm.getNetworkCapabilities(n);
+                if(caps==null || !caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))continue;
+                LinkProperties links=cm.getLinkProperties(n);
+                if(links==null)continue;
+                for(LinkAddress la:links.getLinkAddresses()) {
+                    InetAddress ip=la.getAddress();
+                    if(DeviceApNetwork.matches(ip,la.getPrefixLength()))return n;
+                }
+            }
+        } catch(SecurityException e) {return null;}
+        return null;
+    }
+    static boolean canReadFromDeviceAp(Context context){return connectedDeviceAp(context)!=null;}
+    static Result readFromDeviceAp(Context context) throws Exception {
+        Network chosen=connectedDeviceAp(context);
+        if(chosen==null)throw new Exception("Телефон не підключений до мережі налаштування розетки.");
         HttpURLConnection connection=null;
         try {
             URL url=new URL("http://10.10.7.1/device");
@@ -56,6 +76,8 @@ final class LocalPairingProbe {
             JSONObject data=new JSONObject(new String(out.toByteArray(),StandardCharsets.UTF_8));
             JSONObject nested=data.optJSONObject("data");
             if(nested!=null)data=nested;
+            // Do not accept non-device or incomplete JSON as proof of a successful pairing.
+
             String id=data.optString("deviceid", "");
             String key=data.optString("apikey", "");
             if(!id.matches("[A-Za-z0-9]{10}") || key.length()<6 || key.length()>128)
