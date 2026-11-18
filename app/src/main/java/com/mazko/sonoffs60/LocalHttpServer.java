@@ -105,6 +105,7 @@ final class LocalHttpServer {
             switch(path) {
                 case "/api/scan":controller.rescan();json(out,202,new JSONObject().put("ok",true));break;
                 case "/api/confirm":controller.confirmModel(payload.optString("id"));json(out,200,new JSONObject().put("ok",true));break;
+                case "/api/local-claim":json(out,200,controller.tryLocalOnboarding());break;
                 case "/api/devicekey":controller.saveKey(payload.optString("id"),payload.optString("key"));json(out,200,new JSONObject().put("ok",true));break;
                 case "/api/relay":controller.relay(payload.optString("id"),payload.optBoolean("on"));json(out,202,new JSONObject().put("queued",true));break;
                 case "/api/poll":controller.poll(payload.optString("id"));json(out,202,new JSONObject().put("queued",true));break;

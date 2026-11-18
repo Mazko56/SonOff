@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /** LAN state machine. Does not pair/reflash/reset hardware and does not intercept eWeLink cloud traffic. */
 final class Controller {
     final LogBook log = new LogBook();
+    private final Context appContext;
     private final SecureKeys keys;
     private final android.content.SharedPreferences remembered;
     private final Map<String,S60Device> devices=new HashMap<>();
@@ -30,6 +31,7 @@ final class Controller {
     private volatile long lastDiscoveryAt=System.currentTimeMillis();
     private LanDiscovery discovery;
     Controller(Context context) {
+        appContext=context.getApplicationContext();
         keys=new SecureKeys(context);
         remembered=context.getSharedPreferences("confirmed_s60", Context.MODE_PRIVATE);
         discovery=new LanDiscovery(context,this,log);
@@ -170,6 +172,31 @@ final class Controller {
             request(d,"getState",new JSONObject(),true);
             if(d.authenticated)requestConfiguration(d);
         });
+    }
+    /** Never require the operator to type a secret: only read from the physically accessible device AP.
+     * The S60TPF stock firmware may not implement this legacy endpoint.
+     * Call only on a direct user interaction and only from the AP the user joined intentionally.
+     */
+    JSONObject tryLocalOnboarding() throws Exception {
+        try {
+            LocalPairingProbe.Result result=LocalPairingProbe.readFromDeviceAp(appContext);
+            keys.put(result.id,result.key);  // encrypted using Android Keystore
+            synchronized(this) {
+                S60Device existing=devices.get(result.id);
+                if(existing!=null) {
+                    existing.hasKey=true;
+                    existing.authenticated=false;
+                    existing.error=""; existing.errorCode="";existing.errorAdvice="";
+                }
+            }
+            log.add("LOCAL.PAIR.READ",result.id+" locally acquired access from device AP (secret hidden)");
+            // The access point alone does NOT prove the plug was provisioned into the home Wi-Fi.
+            return new JSONObject().put("ok",true).put("id",result.id)
+                .put("message","Дані локально збережено. Налаштування домашнього Wi-Fi ще не виконане; сумісність цього способу з S60TPF потрібно перевірити.");
+        } catch(Exception e) {
+            log.add("LOCAL.PAIR.UNAVAILABLE",e.getClass().getSimpleName()+"; endpoint unsupported or device AP unreachable");
+            throw e;
+        }
     }
     synchronized void confirmModel(String id) throws Exception {
         S60Device d=devices.get(id);

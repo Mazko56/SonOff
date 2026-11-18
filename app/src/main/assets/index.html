@@ -11,8 +11,18 @@ main{max-width:860px;margin:auto;padding:env(safe-area-inset-top) 18px 92px}.top
 <header class="top"><div class="brand-icon">S</div><div><h1>Sonoff S60</h1><p>Пристрої вашого дому</p></div><button class="flat small" onclick="setTab('help')" aria-label="Допомога">Допомога</button></header>
 <div id="homeScreen">
 <section class="panel"><div class="head"><div><strong>Пошук пристроїв</strong><div id="networkNote" class="muted">Шукаємо розетки поруч у мережі Wi-Fi</div></div><button class="accent small" onclick="action('/api/scan',{})">↻ Шукати</button></div></section>
+<section class="panel"><div class="head"><div><strong>Нова розетка</strong><div class="muted">Без облікового запису eWeLink</div></div><button class="small" onclick="setTab('setup')">Додати</button></div></section>
 <div class="heading"><h2>Мої пристрої</h2><span id="deviceCount" class="muted">0</span></div><div id="devices"></div>
 </div>
+<div id="setupScreen" class="hide">
+<div class="tabbar"><button class="selected" onclick="setTab('home')">← Пристрої</button></div>
+<section class="panel"><h2>Локальне підключення</h2>
+<p>Для нової розетки, яка підтримує власний режим налаштування, можна спробувати отримати доступ без eWeLink.</p>
+<p>Увімкніть режим налаштування кнопкою на розетці. Якщо з'явиться мережа <b>ITEAD-…</b>, підключіть до неї телефон через налаштування Wi-Fi, а потім поверніться сюди.</p>
+<button class="accent" onclick="claimLocal()">Перевірити локальне підключення</button>
+<div id="setupResult" class="notice hide" role="status"></div>
+<p class="muted">Цей спосіб працює лише на прошивках з локальним AP-інтерфейсом. Для стандартної S60TPF його підтримка не підтверджена. Застосунок не скидає налаштування й не змінює прошивку.</p>
+</section></div>
 <div id="helpScreen" class="hide">
 <div class="tabbar"><button class="selected" onclick="setTab('home')">← Пристрої</button></div>
 <section class="panel">
@@ -29,7 +39,7 @@ const el=id=>document.getElementById(id);
 const token=window.SonoffNative?String(window.SonoffNative.getAuthToken()):'';
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(msg){const t=el('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),5200)}
-function setTab(which){tab=which;el('homeScreen').classList.toggle('hide',which!=='home');el('helpScreen').classList.toggle('hide',which!=='help');window.scrollTo(0,0);if(which==='help')getLogs()}
+function setTab(which){tab=which;el('homeScreen').classList.toggle('hide',which!=='home');el('helpScreen').classList.toggle('hide',which!=='help');el('setupScreen').classList.toggle('hide',which!=='setup');window.scrollTo(0,0);if(which==='help')getLogs()}
 async function action(path,data){if(busy)return false;busy=true;try{
  const response=await fetch(path,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Sonoff-Panel':'1','X-Sonoff-Token':token},body:JSON.stringify(data)});
  const result=await response.json();if(!response.ok)throw Error(result.error||'Не вдалося виконати дію.');
@@ -51,7 +61,7 @@ function render(){if(tab!=='home')return;
  const pending=!!d.pending && Date.now()-d.pendingSince<16000;
  const keyMissing=d.encrypted&&!d.hasKey;
  const notAuthed=d.hasKey&&!d.authenticated;
- const status=!d.online?'Поза мережею':keyMissing?'Потрібне підключення':!haveData?'Очікуємо стан':!d.authenticated?'Перевіряємо доступ':'Підключено';
+ const status=!d.online?'Поза мережею':keyMissing?'Не налаштовано':!haveData?'Очікуємо стан':!d.authenticated?'Перевіряємо доступ':'Підключено';
  const statusClass=!d.online?'lost':!canAct?'wait':'';
  const relayText=haveData?(d.relay===true?'Увімкнено':d.relay===false?'Вимкнено':'Очікуємо дані'):'Стан невідомий';
  const options=[['stay','Попередній стан'],['on','Увімкнено'],['off','Вимкнено']];
@@ -59,7 +69,7 @@ function render(){if(tab!=='home')return;
  const err=!!d.errorCode&&!!d.error;
  const needSetup=keyMissing||!!d.errorCode&&d.errorCode==='INVALID_DEVICE_KEY';
  return `<article class="panel"><div class="head"><div><div class="subtle">Розумна розетка · ${esc(d.id.slice(-4))}</div><div class="device-title">Sonoff</div><div class="subtle">Живлення та споживання енергії</div></div><span class="status ${statusClass}">${esc(status)}</span></div>
- ${needSetup?`<div class="notice"><strong>Підключення до розетки</strong><div>Для першого захищеного підключення потрібне підтвердження власника. Після збереження доступу повторно вводити його не доведеться.</div><div class="keyrow" style="margin-top:12px"><input type="password" id="key_${d.id}" placeholder="Ключ доступу" autocomplete="off"><button class="accent" onclick="saveKey('${d.id}')">Підключити</button></div></div>`:''}
+ ${needSetup?`<div class="notice"><strong>Пристрій знайдено</strong><div>Заводська прошивка вимагає первинного захищеного підключення. Можна перевірити локальний спосіб без eWeLink, якщо розетка його підтримує.</div><button class="small" onclick="setTab('setup')" style="margin-top:10px">Налаштувати</button></div>`:''}
  ${err?`<div class="notice error"><strong>${esc(d.error)}</strong>${d.errorAdvice?`<div style="margin-top:5px">${esc(d.errorAdvice)}</div>`:''}<button class="small flat" style="margin-top:8px" onclick="setTab('help')">Журнал подій</button></div>`:''}
  <div class="relay"><div><strong>${pending?'Очікуємо підтвердження…':relayText}</strong><div><span>${haveData?'Останній отриманий стан':notAuthed?'Перевіряємо захищене з’єднання':'Дані з’являться після підключення'}</span></div></div><span style="font-size:22px">⏻</span></div>
  <div class="metrics">${metric('Потужність',haveData?d.power:null,'Вт')}${metric('Напруга',haveData?d.voltage:null,'В')}${metric('Струм',haveData?d.current:null,'А')}${metric('Сьогодні',haveData?d.dayKwh:null,'кВт·год')}${metric('За місяць',haveData?d.monthKwh:null,'кВт·год')}${metric('Сигнал Wi-Fi',haveData?d.rssi:null,'dBm')}</div>
@@ -79,7 +89,14 @@ async function getLogs(){
     el('logText').textContent='Не вдалося завантажити журнал';
   }
 }
-async function saveKey(id){const field=el('key_'+id);if(!field||!field.value.trim()){toast('Введіть ключ для першого підключення');return}const key=field.value;field.value='';field.blur();if(await action('/api/devicekey',{id,key}))toast('Доступ збережено. Встановлюємо зв’язок…')}
+async function claimLocal(){
+ const result=el('setupResult');result.classList.remove('hide');result.textContent='Перевіряємо локальний доступ до розетки…';
+ try {
+  const r=await fetch('/api/local-claim',{method:'POST',headers:{'Content-Type':'application/json','X-Sonoff-Panel':'1','X-Sonoff-Token':token},body:'{}'});
+  const x=await r.json();if(!r.ok)throw Error(x.error||'Ця розетка не підтримує такий спосіб підключення.');
+  result.textContent=x.message||'Локальний доступ отримано.';await refresh();
+ } catch(e){result.textContent=e.message||'Не вдалося отримати локальні дані доступу. Налаштування розетки не змінено.'}
+}
 async function relay(id,on){if(await action('/api/relay',{id,on}))toast('Команду передано. Чекаємо підтвердження розетки.')}
 async function changeStartup(id,mode){if(await action('/api/startup',{id,mode}))toast('Налаштування передано. Перевіряємо відповідь розетки.')}
 function shareLogs(){if(window.SonoffNative&&window.SonoffNative.shareLogs)window.SonoffNative.shareLogs();else toast('Поширення доступне у застосунку Android')}

@@ -56,3 +56,7 @@
 - Прибрано довідкові картки «Як підключитися», «Діагностика» та застереження перед надсиланням.
 - Експортний діагностичний звіт і фактичні записи логів залишено без змін: вони потрібні для аналізу збоїв підключення та керування.
 - Команди пристрою, шифрування, мережевий пошук та серверний код **не змінювалися**.
+
+## Version 1.1.0-localfirst-preview — first local-only onboarding probe
+
+Manual key field was removed from the **visible UI**, replaced with "Нова розетка" → "Локальне підключення". The app can **attempt** to read a key directly from a supported Sonoff pairing AP at `10.10.7.1/device` without uploading any credentials. This is read-only and the key is saved in Android Keystore. **Stock S60TPF support is unverified**, and this does **not** provision a new device into home Wi-Fi. It is not a complete no-cloud first-use solution; it reports unsupported firmware instead of claiming success. See `docs/LOCAL_FIRST.md` before testing. To commission stock S60TPF without eWeLink at all may require different hardware or owner-authorized firmware replacement.
