@@ -29,7 +29,11 @@ jobs:
           python-version: '3.12'
       - name: Install simulator test dependencies
         run: python -m pip install cryptography
-      - name: Protocol and Java stub regression suite
+      - name: Reconcile obsolete test files after ZIP upgrades
+        # Extracting newer ZIPs over older source trees leaves outdated tests behind.
+        # Preserve them outside test discovery, then run ALL current release tests.
+        run: python scripts/sync_ci_tests.py --quarantine "$RUNNER_TEMP/sonoff-retired-tests"
+      - name: Protocol, Java stub and UI regression suite
         run: python -m unittest discover -s tests -v
       - run: gradle --no-daemon --stacktrace assembleDebug
       - uses: actions/upload-artifact@v4

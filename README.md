@@ -1,3 +1,17 @@
+## Оновлення 1.7.2: автоматичне узгодження тестів у GitHub Actions
+
+Виправлено повторний CI-збій із помилкою `AssertionError: 'onclick="claimLocal()"' not found`.
+Цей `assertIn` належить **застарілому тесту**, якого немає у чистому наборі тестів релізу: `Expand-Archive -Force` не прибирає файли, залишені попереднім ZIP.
+
+- `scripts/test_inventory.json` фіксує набір тестів цього випуску.
+- `scripts/sync_ci_tests.py` перед тестами GitHub Actions **зберігає** застарілі тести в `$RUNNER_TEMP/sonoff-retired-tests`, виводячи їхні імена у лог; вихідний код застосунку не чіпає.
+- `scripts/sync_tests_windows.ps1 -ArchivePath ...` зберігає старі тести локально та прибирає їх зі складу наступного Git-коміту (`git add -A` фіксує ці видалення).
+- `tests/test_release_inventory.py` перевіряє інвентар, резервування й реакцію на застарілі тести, а `test_ui_javascript.py` перевіряє актуальний JavaScript.
+
+Після чистої синхронізації: **40/40 лабораторних тестів PASS**. Android Gradle `assembleDebug` і роботу з реальною розеткою потрібно підтвердити окремо.
+
+---
+
 ## Оновлення 1.7.1: виправлення збірки GitHub Actions
 
 Виправлено збій збірки APK через застарілий тест `claimLocal()`: кнопка
