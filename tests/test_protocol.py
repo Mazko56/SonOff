@@ -31,7 +31,7 @@ class ProtocolTests(unittest.TestCase):
         server=ThreadingHTTPServer(('127.0.0.1',0),make_handler(secret))
         th=threading.Thread(target=server.serve_forever,daemon=True);th.start()
         try:
-            for command,body in [('switches',{'switches':[{'outlet':0,'switch':'on'}],'operSide':1}),('getState',{}),('sledonline',{'sledOnline':'off'}),('configure',{'configure':'get'}),('configure',{'configure':[{'outlet':0,'startup':'on'}]})]:
+            for command,body in [('switches',{'switches':[{'outlet':0,'switch':'on'}],'operSide':1}),('getState',{}),('sledOnline',{'sledOnline':'off'}),('configure',{'configure':'get'}),('configure',{'configure':[{'outlet':0,'startup':'on'}]})]:
                 payload={'sequence':'1234','deviceid':DEVICE_ID,'selfApikey':'123',**encrypt_obj(body,secret)}
                 raw=json.dumps(payload,separators=(',',':')).encode()
                 url=f'http://127.0.0.1:{server.server_port}/zeroconf/{command}'
@@ -40,10 +40,10 @@ class ProtocolTests(unittest.TestCase):
                     reply=json.load(resp)
                 self.assertEqual(reply['error'],0)
                 state=decrypt_obj(reply['data'],reply['iv'],secret)
-                if command in ('switches','getState','sledonline'):
+                if command in ('switches','getState','sledOnline'):
                     self.assertEqual(state['switches'][0]['switch'],'on')
                     self.assertEqual(state['power'],724)
-                if command=='sledonline':self.assertEqual(state['sledOnline'],'off')
+                if command=='sledOnline':self.assertEqual(state['sledOnline'],'off')
                 if command=='configure':self.assertTrue(state['configure'])
         finally:server.shutdown();server.server_close()
 

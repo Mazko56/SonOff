@@ -25,6 +25,7 @@ final class LanDiscovery {
     private final LogBook log;
     private NsdManager nsd;
     private NsdManager.DiscoveryListener listener;
+    private final List<NsdManager.DiscoveryListener> alternateListeners=new ArrayList<>();
     private WifiManager.MulticastLock lock;
     private volatile boolean running;
     private volatile boolean forceQuery;
@@ -51,6 +52,7 @@ final class LanDiscovery {
             lock=wifi.createMulticastLock("SonoffS60Mdns");lock.setReferenceCounted(false);lock.acquire();
         } catch(Exception ex) {log.add("SCAN.WIFI", "Cannot acquire Wi-Fi multicast lock: "+ex.getClass().getSimpleName());}
         startNsd();
+        startOtherProtocolDiscovery();
         worker=new Thread(this::multicastLoop,"S60-mDNS");worker.setDaemon(true);worker.start();
     }
     private void startNsd() {
@@ -92,6 +94,26 @@ final class LanDiscovery {
             };
             nsd.discoverServices("_ewelink._tcp.",NsdManager.PROTOCOL_DNS_SD,listener);
         } catch(Exception ex) {log.add("NSD.ERROR",ex.getClass().getSimpleName()+": "+ex.getMessage());}
+    }
+    /** Detect Matter operational/commissionable services without claiming they are usable via eWeLink LAN.
+     * This is passive identification only: no QR pairing, no cloud login, no writes.
+     */
+    private void startOtherProtocolDiscovery() {
+        if(nsd==null)return;
+        for(final String kind:new String[]{"_matter._tcp.","_matterc._udp."}) {
+            NsdManager.DiscoveryListener other=new NsdManager.DiscoveryListener() {
+                @Override public void onDiscoveryStarted(String t) {log.add("PROTOCOL.SCAN",t+" passive browse active");}
+                @Override public void onServiceFound(NsdServiceInfo info) {
+                    controller.onAlternateService(kind,info.getServiceName(),"not resolved",0);
+                }
+                @Override public void onServiceLost(NsdServiceInfo info) {log.add("PROTOCOL.LOST",kind+" "+LanDiagnostics.shortText(info.getServiceName()));}
+                @Override public void onDiscoveryStopped(String t) {}
+                @Override public void onStartDiscoveryFailed(String t,int code) {log.add("PROTOCOL.SCAN.UNAVAILABLE",t+" code="+code);}
+                @Override public void onStopDiscoveryFailed(String t,int code) {log.add("PROTOCOL.SCAN.STOP",t+" code="+code);}
+            };
+            try {nsd.discoverServices(kind,NsdManager.PROTOCOL_DNS_SD,other);alternateListeners.add(other);}
+            catch(Exception e){log.add("PROTOCOL.SCAN.UNAVAILABLE",kind+" cause="+e.getClass().getSimpleName());}
+        }
     }
     synchronized void rescan() {
         if(!running){start();return;}
@@ -164,6 +186,10 @@ final class LanDiscovery {
         if(nsd!=null && listener!=null) {
             try{nsd.stopServiceDiscovery(listener);}catch(Exception ignored){}
         }
+        if(nsd!=null) for(NsdManager.DiscoveryListener item:alternateListeners) {
+            try{nsd.stopServiceDiscovery(item);}catch(Exception ignored){}
+        }
+        alternateListeners.clear();
         if(lock!=null && lock.isHeld()) {try{lock.release();}catch(Exception ignored){}}
     }
 }

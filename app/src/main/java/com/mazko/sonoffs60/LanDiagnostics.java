@@ -106,6 +106,29 @@ final class LanDiagnostics {
         return b.toString();
     }
 
+    /** Log a tiny allowlist of actual readings; never names, credentials, SSID, raw JSON or device tokens. */
+    static String telemetrySummary(JSONObject state) {
+        if(state==null)return "no telemetry";
+        JSONObject obj=state.optJSONObject("params");
+        if(obj==null)obj=state;
+        StringBuilder b=new StringBuilder();
+        for(String f:Arrays.asList("switch","power","voltage","current","dayKwh","monthKwh","rssi","signalStrength","fwVersion","uiid")) {
+            Object v=obj.opt(f);
+            if(v==null||v==JSONObject.NULL)continue;
+            String value=String.valueOf(v);
+            if(!value.matches("[-+0-9A-Za-z.]{1,24}"))continue;
+            if(b.length()>0)b.append(' ');
+            b.append(f).append('=').append(value);
+        }
+        org.json.JSONArray switches=obj.optJSONArray("switches");
+        if(switches!=null && switches.length()>0) {
+            JSONObject zero=switches.optJSONObject(0);
+            if(zero!=null) b.append(" outlet0=").append(shortText(zero.optString("switch","?")));
+            b.append(" channels=").append(switches.length());
+        }
+        return b.length()==0?"no allowlisted state":b.toString();
+    }
+
     static String wifiSnapshot(Context context) {
         try {
             ConnectivityManager cm=(ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);

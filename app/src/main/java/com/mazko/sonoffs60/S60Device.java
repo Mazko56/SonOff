@@ -18,6 +18,12 @@ final class S60Device {
     long lastDiagnostic = 0;
     long lastStatusLog = 0;
     String localType = "";
+    String protocol = ProtocolRouter.ENCRYPTED;
+    String identifiedAs = "не встановлено";
+    String lastProtocolAttempt = "не виконано";
+    String accessReason = "очікуємо оголошення";
+    boolean plaintextHttpConfirmed = false;
+    String lastHttpCommand = "";
     String lastSource = "";
     int port = 8081;
     boolean encrypted = true;
@@ -28,6 +34,7 @@ final class S60Device {
     long lastRequest = 0;
     long lastAutoProbe = 0;
     long lastConfigurationQuery = 0;
+    long lastLedEchoProbe = 0;
     boolean authenticated = false;
     String errorCode = "";
     String errorAdvice = "";
@@ -37,7 +44,26 @@ final class S60Device {
     long pendingSince = 0;
     JSONObject values = new JSONObject();
     S60Device(String id) { this.id = id; }
-    private Object metric(String name, double multiplier) {
+    boolean hasOutletZero() {
+        JSONArray arr=values.optJSONArray("switches");
+        if(arr==null)return false;
+        for(int i=0;i<arr.length();i++) {
+            JSONObject row=arr.optJSONObject(i);
+            if(row!=null && row.optInt("outlet",-1)==0 && row.has("switch"))return true;
+        }
+        return false;
+    }
+    String outletZeroSwitch() {
+        JSONArray arr=values.optJSONArray("switches");
+        if(arr==null)return "";
+        for(int i=0;i<arr.length();i++) {
+            JSONObject row=arr.optJSONObject(i);
+            if(row!=null && row.optInt("outlet",-1)==0)return row.optString("switch","");
+        }
+        return "";
+    }
+    private Object metric(String name) {
+        double multiplier=SonoffProfiles.metricMultiplier(name,localType,uiidHint,values.optJSONArray("switches")!=null);
         if (!values.has(name)) return JSONObject.NULL;
         try { return Math.round(Double.parseDouble(values.get(name).toString()) * multiplier * 100.0)/100.0; }
         catch (Exception ignored) { return JSONObject.NULL; }
@@ -45,7 +71,7 @@ final class S60Device {
     JSONObject asJson() throws Exception {
         JSONObject j = new JSONObject()
                 .put("id", id).put("ip", ip).put("port",port)
-                .put("type", localType).put("encrypted",encrypted)
+                .put("type", localType).put("protocol",protocol).put("encrypted",encrypted)
                 .put("advertisedName",advertisedName).put("modelHint",modelHint)
                 .put("uiidHint",uiidHint).put("firmwareHint",firmwareHint)
                 .put("hasKey",hasKey).put("authenticated",authenticated)
@@ -55,19 +81,23 @@ final class S60Device {
                 .put("source",lastSource).put("error",error)
                 .put("errorCode",errorCode).put("errorAdvice",errorAdvice)
                 .put("ready", authenticated && System.currentTimeMillis()-lastData<120000)
-                .put("canControl",authenticated && System.currentTimeMillis()-lastData<120000 && !ip.isEmpty() && (localType.isEmpty() || "plug".equals(localType) || "enhanced_plug".equals(localType)) &&
-                    (values.has("switch") || ("plug".equals(localType) && values.optJSONArray("switches")!=null)))
+                .put("canControl",authenticated && System.currentTimeMillis()-lastData<120000 && !ip.isEmpty() &&
+                    (encrypted || ProtocolRouter.trustedPlaintextRelay(protocol,localType,
+                         values.has("switch") || hasOutletZero(),plaintextHttpConfirmed)) &&
+                    (values.has("switch") || hasOutletZero()) &&
+                    ("plug".equals(localType)||"enhanced_plug".equals(localType)||"diy_plug".equals(localType)||
+                     "th_plug".equals(localType)||"strip".equals(localType)))
                 .put("pending",pending).put("pendingSince",pendingSince)
                 .put("firmware",values.optString("fwVersion",""))
                 .put("led",values.has("sledOnline") ? values.optString("sledOnline") : JSONObject.NULL)
                 .put("startup",getStartup())
-                .put("power",metric("power",.01)).put("voltage",metric("voltage",.01))
-                .put("current",metric("current",.01))
-                .put("dayKwh",metric("dayKwh",.01)).put("monthKwh",metric("monthKwh",.01))
-                .put("rssi", metric("rssi",1.0));
+                .put("power",metric("power")).put("voltage",metric("voltage"))
+                .put("current",metric("current"))
+                .put("dayKwh",metric("dayKwh")).put("monthKwh",metric("monthKwh"))
+                .put("rssi", metric("rssi"));
         Object relay = JSONObject.NULL;
         JSONArray switches = values.optJSONArray("switches");
-        if (switches!=null && switches.length()>0) relay = "on".equals(switches.optJSONObject(0).optString("switch"));
+        if (switches!=null && hasOutletZero()) relay = "on".equals(outletZeroSwitch());
         else if (values.has("switch")) relay = "on".equals(values.optString("switch"));
         return j.put("relay",relay);
     }
@@ -84,11 +114,12 @@ final class S60Device {
         if(src==null)return false;
         JSONObject nested=src.optJSONObject("params");
         if(nested!=null)src=nested;
-        String[] safeFields={"switch","switches","power","voltage","current","dayKwh","monthKwh","rssi","sledOnline"};
+        String[] safeFields={"switch","switches","power","voltage","current","dayKwh","monthKwh","rssi","signalStrength","sledOnline"};
         boolean hasTelemetry=false;
         for(String field:safeFields) if(src.has(field)) {
             try{values.put(field,src.get(field));hasTelemetry=true;}catch(Exception ignored){}
         }
+        if(src.has("signalStrength")&&!src.has("rssi"))try{values.put("rssi",src.get("signalStrength"));}catch(Exception ignored){}
         if(hasTelemetry){lastData=System.currentTimeMillis();error="";errorCode="";errorAdvice="";}
         captureMetadata(src);
         return hasTelemetry;
@@ -116,13 +147,13 @@ final class S60Device {
             try { values.put(k,src.get(k)); } catch(Exception ignored) { }
         }
         captureMetadata(src);
+        if(src.has("signalStrength")&&!src.has("rssi"))try{values.put("rssi",src.get("signalStrength"));}catch(Exception ignored){}
         lastData=System.currentTimeMillis();
         error="";errorCode="";errorAdvice="";
         authenticated=true;
         if(!pending.isEmpty()) {
             JSONArray switches=values.optJSONArray("switches");
-            JSONObject first=switches!=null?switches.optJSONObject(0):null;
-            String confirmed=first!=null?first.optString("switch"):values.optString("switch","");
+            String confirmed=hasOutletZero()?outletZeroSwitch():values.optString("switch","");
             if(pending.equals(confirmed))pending="";
         }
     }

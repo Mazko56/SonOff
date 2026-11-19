@@ -48,17 +48,22 @@ def rr(name, rtype, rdata):
     return dnsname(name) + struct.pack('!HHIH', rtype, 1, 30, len(rdata)) + rdata
 
 
-def mdns_advertisement(port: int, missing_a=False, advertised_ip='127.0.0.1', secret='lab-test-key-only'):
+def mdns_advertisement(port: int, missing_a=False, advertised_ip='127.0.0.1', secret='lab-test-key-only', diy=False):
     service = '_ewelink._tcp.local'
     instance = f'eWeLink_{DEVICE_ID}.{service}'
     host = f'eWeLink_{DEVICE_ID}.local'
-    encrypted = encrypt_obj(STATE, secret)
-    data = encrypted['data']
-    chunks = [data[i:i+100] for i in range(0, len(data), 100)]
-    txt_items = [f'id={DEVICE_ID}', 'type=plug', 'encrypt=true', 'txtvers=1',
-                 'name=LAB Simulator', 'model=S60TPF-LAB', 'uiid=190', 'fwVersion=lab-1.0',
-                 f'seq={int(time.time())}', 'iv=' + encrypted['iv']]
-    txt_items.extend(f'data{i+1}={segment}' for i, segment in enumerate(chunks[:4]))
+    if diy:
+        data = json.dumps({'switch': STATE['switches'][0]['switch'], 'rssi': STATE['rssi']},separators=(',', ':'))
+        txt_items = [f'id={DEVICE_ID}', 'type=diy_plug', 'apivers=1', 'txtvers=1',
+                     'name=DIY LAB Simulator', 'model=DIY-LAB', f'seq={int(time.time())}', 'data1=' + data]
+    else:
+        encrypted = encrypt_obj(STATE, secret)
+        data = encrypted['data']
+        chunks = [data[i:i+100] for i in range(0, len(data), 100)]
+        txt_items = [f'id={DEVICE_ID}', 'type=plug', 'encrypt=true', 'txtvers=1',
+                     'name=LAB Simulator', 'model=S60TPF-LAB', 'uiid=190', 'fwVersion=lab-1.0',
+                     f'seq={int(time.time())}', 'iv=' + encrypted['iv']]
+        txt_items.extend(f'data{i+1}={segment}' for i, segment in enumerate(chunks[:4]))
     txt = b''.join(bytes([len(s)]) + s.encode('ascii') for s in txt_items)
     records = [rr(service, 12, dnsname(instance)),
                rr(instance, 33, struct.pack('!HHH', 0, 0, port) + dnsname(host)),
@@ -69,18 +74,18 @@ def mdns_advertisement(port: int, missing_a=False, advertised_ip='127.0.0.1', se
     return header + b''.join(records)
 
 
-def announce(port, missing_a, advertised_ip, secret):
+def announce(port, missing_a, advertised_ip, secret, diy=False):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
     try:
         while True:
-            sock.sendto(mdns_advertisement(port, missing_a, advertised_ip, secret), ('224.0.0.251', 5353))
+            sock.sendto(mdns_advertisement(port, missing_a, advertised_ip, secret,diy), ('224.0.0.251', 5353))
             time.sleep(5)
     except (OSError, KeyboardInterrupt):
         pass
 
 
-def make_handler(secret, public_readonly=False):
+def make_handler(secret, public_readonly=False, diy=False):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             print('[simulator HTTP]', format % args)
@@ -94,6 +99,17 @@ def make_handler(secret, public_readonly=False):
                 request = json.loads(self.rfile.read(n))
                 if request.get('deviceid') != DEVICE_ID:
                     answer = {'error': 404}
+                elif diy:
+                    cmd=self.path.split('/')[-1]
+                    if cmd == 'info':
+                        answer={'error': 0, 'seq': int(time.time()), 'data': {'switch':STATE['switches'][0]['switch'],'rssi':STATE['rssi']}}
+                    elif cmd == 'signal_strength':
+                        answer={'error':0,'seq':int(time.time()),'data':{'signalStrength':STATE['rssi']}}
+                    elif cmd == 'switch' and request.get('data',{}).get('switch') in ('on','off'):
+                        STATE['switches'][0]['switch']=request['data']['switch']
+                        answer={'error':0,'seq':int(time.time()),'data':{'switch':STATE['switches'][0]['switch']}}
+                    else:
+                        answer={'error':404}
                 elif not request.get('encrypt'):
                     # Explicit opt-in fixture behavior; this is NOT claimed for stock S60TPF.
                     if public_readonly and self.path in ('/zeroconf/getState','/zeroconf/info'):
@@ -114,7 +130,7 @@ def make_handler(secret, public_readonly=False):
                             answer = {'error': 0, 'seq': int(time.time()), **encrypt_obj(STATE, secret)}
                     elif cmd == 'getState':
                         answer = {'error': 0, 'seq': int(time.time()), **encrypt_obj(STATE, secret)}
-                    elif cmd == 'sledonline':
+                    elif cmd in ('sledonline', 'sledOnline'):
                         if data.get('sledOnline') not in ('on', 'off'):
                             answer = {'error': 400}
                         else:
@@ -155,12 +171,13 @@ def main():
     p.add_argument('--advertise-ip', default='127.0.0.1', help='Use the LAN address of the desktop, not loopback, for Android tests')
     p.add_argument('--missing-a', action='store_true')
     p.add_argument('--public-readonly', action='store_true', help='LAB ONLY: simulate a device with public read-only telemetry')
+    p.add_argument('--diy', action='store_true', help='LAB ONLY: emulate official unencrypted diy_plug API; NOT stock S60TPF')
     opt = p.parse_args()
     if opt.advertise:
-        threading.Thread(target=announce, args=(opt.port, opt.missing_a, opt.advertise_ip, opt.devicekey), daemon=True).start()
-    server = ThreadingHTTPServer((opt.host, opt.port), make_handler(opt.devicekey,opt.public_readonly))
+        threading.Thread(target=announce, args=(opt.port, opt.missing_a, opt.advertise_ip, opt.devicekey, opt.diy), daemon=True).start()
+    server = ThreadingHTTPServer((opt.host, opt.port), make_handler(opt.devicekey,opt.public_readonly,opt.diy))
     print(f'LAB SIMULATOR: http://{opt.host}:{opt.port}, deviceid={DEVICE_ID}, mDNS={opt.advertise}, missing-A={opt.missing_a}')
-    print('public_readonly=',opt.public_readonly,'(lab-only; stock S60TPF not verified)')
+    print('public_readonly=',opt.public_readonly,'diy=',opt.diy,'(lab-only; DIY is not stock S60TPF)')
     print('Do not use this fixture to claim real S60 compatibility.')
     try:
         server.serve_forever()
