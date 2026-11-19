@@ -6,8 +6,8 @@ android {
         applicationId 'com.mazko.sonoffs60'
         minSdk 26
         targetSdk 35
-        versionCode 6
-        versionName '1.1.1-local-autoconnect'
+        versionCode 7
+        versionName '1.2.0-local-readonly-diagnostics'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

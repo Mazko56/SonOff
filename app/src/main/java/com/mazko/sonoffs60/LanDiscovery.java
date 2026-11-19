@@ -71,6 +71,7 @@ final class LanDiscovery {
                                 if(resolved.getAttributes()!=null) for(Map.Entry<String,byte[]> e:resolved.getAttributes().entrySet()) {
                                     attrs.put(e.getKey().toLowerCase(Locale.ROOT),new String(e.getValue(),java.nio.charset.StandardCharsets.UTF_8));
                                 }
+                                attrs.put("service_instance",resolved.getServiceName());
                                 String host=resolved.getHost()==null?"":resolved.getHost().getHostAddress();
                                 controller.onDiscover(deviceId,host,resolved.getPort(),attrs,"Android NSD");
                             }
@@ -151,7 +152,10 @@ final class LanDiscovery {
             }
             String sender=p.getAddress().getHostAddress();
             if(!p.getAddress().isSiteLocalAddress() && !p.getAddress().isLinkLocalAddress())sender="";
-            controller.onDiscover(deviceId,ip,ports.getOrDefault(instance,8081),r.txt,source,sender);
+            Map<String,String> attrs=new HashMap<>(r.txt);
+            attrs.put("service_instance",r.name);
+            attrs.put("service_host",hosts.getOrDefault(instance,""));
+            controller.onDiscover(deviceId,ip,ports.getOrDefault(instance,8081),attrs,source,sender);
         }
     }
     synchronized void stop() {

@@ -56,6 +56,7 @@ def mdns_advertisement(port: int, missing_a=False, advertised_ip='127.0.0.1', se
     data = encrypted['data']
     chunks = [data[i:i+100] for i in range(0, len(data), 100)]
     txt_items = [f'id={DEVICE_ID}', 'type=plug', 'encrypt=true', 'txtvers=1',
+                 'name=LAB Simulator', 'model=S60TPF-LAB', 'uiid=190', 'fwVersion=lab-1.0',
                  f'seq={int(time.time())}', 'iv=' + encrypted['iv']]
     txt_items.extend(f'data{i+1}={segment}' for i, segment in enumerate(chunks[:4]))
     txt = b''.join(bytes([len(s)]) + s.encode('ascii') for s in txt_items)
@@ -79,7 +80,7 @@ def announce(port, missing_a, advertised_ip, secret):
         pass
 
 
-def make_handler(secret):
+def make_handler(secret, public_readonly=False):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             print('[simulator HTTP]', format % args)
@@ -94,7 +95,11 @@ def make_handler(secret):
                 if request.get('deviceid') != DEVICE_ID:
                     answer = {'error': 404}
                 elif not request.get('encrypt'):
-                    answer = {'error': 401}
+                    # Explicit opt-in fixture behavior; this is NOT claimed for stock S60TPF.
+                    if public_readonly and self.path in ('/zeroconf/getState','/zeroconf/info'):
+                        answer = {'error': 0, 'data': dict(STATE)}
+                    else:
+                        answer = {'error': 401}
                 else:
                     data = decrypt_obj(request['data'], request['iv'], secret)
                     cmd = self.path.split('/')[-1]
@@ -149,11 +154,13 @@ def main():
     p.add_argument('--advertise', action='store_true')
     p.add_argument('--advertise-ip', default='127.0.0.1', help='Use the LAN address of the desktop, not loopback, for Android tests')
     p.add_argument('--missing-a', action='store_true')
+    p.add_argument('--public-readonly', action='store_true', help='LAB ONLY: simulate a device with public read-only telemetry')
     opt = p.parse_args()
     if opt.advertise:
         threading.Thread(target=announce, args=(opt.port, opt.missing_a, opt.advertise_ip, opt.devicekey), daemon=True).start()
-    server = ThreadingHTTPServer((opt.host, opt.port), make_handler(opt.devicekey))
+    server = ThreadingHTTPServer((opt.host, opt.port), make_handler(opt.devicekey,opt.public_readonly))
     print(f'LAB SIMULATOR: http://{opt.host}:{opt.port}, deviceid={DEVICE_ID}, mDNS={opt.advertise}, missing-A={opt.missing_a}')
+    print('public_readonly=',opt.public_readonly,'(lab-only; stock S60TPF not verified)')
     print('Do not use this fixture to claim real S60 compatibility.')
     try:
         server.serve_forever()

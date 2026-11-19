@@ -7,6 +7,15 @@ final class S60Device {
     final String id;
     String ip = "";
     String fallbackIp = "";
+    String advertisedName = "";
+    String modelHint = "";
+    String firmwareHint = "";
+    String uiidHint = "";
+    String serviceInstance = "";
+    String txtSignature = "";
+    String diagnosticTcp = "not checked";
+    String diagnosticHttp = "not checked";
+    long lastDiagnostic = 0;
     long lastStatusLog = 0;
     String localType = "";
     String lastSource = "";
@@ -37,6 +46,8 @@ final class S60Device {
         JSONObject j = new JSONObject()
                 .put("id", id).put("ip", ip).put("port",port)
                 .put("type", localType).put("encrypted",encrypted)
+                .put("advertisedName",advertisedName).put("modelHint",modelHint)
+                .put("uiidHint",uiidHint).put("firmwareHint",firmwareHint)
                 .put("hasKey",hasKey).put("authenticated",authenticated)
                 .put("modelConfirmed",modelConfirmed)
                 .put("lastSeen", lastSeen).put("lastData",lastData).put("lastHttpOk",lastHttpOk)
@@ -44,7 +55,8 @@ final class S60Device {
                 .put("source",lastSource).put("error",error)
                 .put("errorCode",errorCode).put("errorAdvice",errorAdvice)
                 .put("ready", authenticated && System.currentTimeMillis()-lastData<120000)
-                .put("canControl",authenticated && System.currentTimeMillis()-lastData<120000 && !ip.isEmpty() && (localType.isEmpty() || "plug".equals(localType)) && (values.has("switch") || values.optJSONArray("switches")!=null))
+                .put("canControl",authenticated && System.currentTimeMillis()-lastData<120000 && !ip.isEmpty() && (localType.isEmpty() || "plug".equals(localType) || "enhanced_plug".equals(localType)) &&
+                    (values.has("switch") || ("plug".equals(localType) && values.optJSONArray("switches")!=null)))
                 .put("pending",pending).put("pendingSince",pendingSince)
                 .put("firmware",values.optString("fwVersion",""))
                 .put("led",values.has("sledOnline") ? values.optString("sledOnline") : JSONObject.NULL)
@@ -67,6 +79,31 @@ final class S60Device {
         }
         return JSONObject.NULL;
     }
+    /** Accept only verified state fields, never treat unauthenticated metadata as authorization. */
+    boolean observeReadOnly(JSONObject src) {
+        if(src==null)return false;
+        JSONObject nested=src.optJSONObject("params");
+        if(nested!=null)src=nested;
+        String[] safeFields={"switch","switches","power","voltage","current","dayKwh","monthKwh","rssi","sledOnline"};
+        boolean hasTelemetry=false;
+        for(String field:safeFields) if(src.has(field)) {
+            try{values.put(field,src.get(field));hasTelemetry=true;}catch(Exception ignored){}
+        }
+        if(hasTelemetry){lastData=System.currentTimeMillis();error="";errorCode="";errorAdvice="";}
+        captureMetadata(src);
+        return hasTelemetry;
+    }
+    void captureMetadata(JSONObject src) {
+        if(src==null)return;
+        String n=src.optString("deviceName",src.optString("name",""));
+        if(!n.isEmpty())advertisedName=LanDiagnostics.shortText(n);
+        String m=src.optString("productModel",src.optString("model",""));
+        if(!m.isEmpty())modelHint=LanDiagnostics.shortText(m);
+        String fw=src.optString("fwVersion",src.optString("firmware",""));
+        if(!fw.isEmpty())firmwareHint=LanDiagnostics.shortText(fw);
+        String uiid=src.optString("uiid","");
+        if(uiid.matches("[0-9]{1,5}"))uiidHint=uiid;
+    }
     void apply(JSONObject src) {
         if (src==null) return;
         JSONObject nested = src.optJSONObject("params");
@@ -78,6 +115,7 @@ final class S60Device {
             if (k.equals("devicekey") || k.equals("apikey") || k.equals("ssid") || k.equals("bssid") || k.equals("password") || k.equals("token")) continue;
             try { values.put(k,src.get(k)); } catch(Exception ignored) { }
         }
+        captureMetadata(src);
         lastData=System.currentTimeMillis();
         error="";errorCode="";errorAdvice="";
         authenticated=true;

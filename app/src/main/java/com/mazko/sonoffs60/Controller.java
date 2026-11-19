@@ -7,6 +7,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.util.TreeSet;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -25,6 +28,7 @@ final class Controller {
     private final SecureKeys keys;
     private final android.content.SharedPreferences remembered;
     private final Map<String,S60Device> devices=new HashMap<>();
+    private final ExecutorService diagnostic=Executors.newSingleThreadExecutor(); // Read-only, throttled; never blocks authenticated relay controls.
     private final ExecutorService network=Executors.newSingleThreadExecutor(); // The S60 embedded HTTP server processes one request at a time.
     private final ScheduledExecutorService refresh=Executors.newSingleThreadScheduledExecutor();
     private final AtomicLong sequence=new AtomicLong(System.currentTimeMillis());
@@ -67,20 +71,38 @@ final class Controller {
             if(now-lastDiscoveryAt>180000) {lastDiscoveryAt=now;discovery.rescan();}
         },10,12,TimeUnit.SECONDS);
     }
-    void begin() {discovery.start();log.add("SCAN.AUTOMATIC","Automatic discovery enabled at startup");}
-    void rescan() {discovery.rescan();lastDiscoveryAt=System.currentTimeMillis();log.add("SCAN", "Discovery query requested");}
-    void close(){discovery.stop();network.shutdownNow();refresh.shutdownNow();}
+    void begin() {
+        log.add("NET.ACTIVE",LanDiagnostics.wifiSnapshot(appContext));
+        log.add("DIAG.POLICY","local private IPv4 only; passive NSD/mDNS; TCP and read-only HTTP; no cloud; relay writes require validated access");
+        discovery.start();log.add("SCAN.AUTOMATIC","Automatic discovery enabled at startup");
+    }
+    void rescan() {discovery.rescan();lastDiscoveryAt=System.currentTimeMillis();log.add("SCAN", "Discovery query requested");
+        log.add("NET.ACTIVE",LanDiagnostics.wifiSnapshot(appContext));}
+    void close(){discovery.stop();diagnostic.shutdownNow();network.shutdownNow();refresh.shutdownNow();}
     synchronized String diagnosticReport() {
-        StringBuilder out=new StringBuilder("Sonoff S60 — перевірка з’єднання\n");
-        out.append("Знайдено пристроїв: ").append(devices.size()).append('\n');
-        for(S60Device d:devices.values()) {
-            out.append("--- ").append(d.id).append(" ---\n");
-            out.append("Пошук: ").append(d.lastSeen>0?"виявлено":"не виявлено")
-               .append("; адреса ").append(d.ip).append(':').append(d.port).append('\n');
-            out.append("Захищене з’єднання: ").append(d.authenticated?"підтверджено":d.hasKey?"перевіряється":"потрібне підтвердження доступу").append('\n');
-            out.append("Останній HTTP-відгук: ").append(d.lastHttpOk>0?new java.util.Date(d.lastHttpOk):"не надходив").append('\n');
-            out.append("Останнє оновлення показників: ").append(d.lastData>0?new java.util.Date(d.lastData):"немає").append('\n');
-            if(!d.errorCode.isEmpty())out.append("Причина: ").append(d.errorCode).append("; ").append(d.errorAdvice).append('\n');
+        StringBuilder out=new StringBuilder("Sonoff S60 — детальна перевірка локального з’єднання (без секретів)\n");
+        out.append("Мережа телефону: ").append(LanDiagnostics.wifiSnapshot(appContext)).append('\n');
+        out.append("Виявлено: ").append(devices.size()).append("; NSD/mDNS активні: ").append(discovery.isSearchReady()).append('\n');
+        out.append("Керування реле виконується тільки після підтвердженої авторизації.\n");
+        for(String id:new TreeSet<>(devices.keySet())) {
+            S60Device d=devices.get(id);
+            out.append("--- ").append(d.id).append(" ---\n")
+                .append("Назва: ").append(d.advertisedName.isEmpty()?"не оголошена локально":d.advertisedName).append('\n')
+                .append("Модель: ").append(d.modelHint.isEmpty()?"не встановлена":d.modelHint)
+                .append("; UIID: ").append(d.uiidHint.isEmpty()?"не оголошено":d.uiidHint)
+                .append("; FW: ").append(d.firmwareHint.isEmpty()?"не оголошено":d.firmwareHint).append('\n')
+                .append("LAN: ").append(d.ip).append(':').append(d.port)
+                .append("; fallback: ").append(d.fallbackIp.isEmpty()?"немає":d.fallbackIp)
+                .append("; type: ").append(d.localType).append("; encrypted: ").append(d.encrypted)
+                .append("; via: ").append(d.lastSource).append('\n')
+                .append("Сервіс: ").append(d.serviceInstance).append('\n')
+                .append("Ключ у Keystore: ").append(d.hasKey?"є":"немає")
+                .append("; авторизація: ").append(d.authenticated?"підтверджена":"не підтверджена").append('\n')
+                .append("TCP: ").append(d.diagnosticTcp).append("; HTTP read-only: ").append(d.diagnosticHttp).append('\n')
+                .append("Остання HTTP-відповідь (успішна): ").append(d.lastHttpOk>0?new java.util.Date(d.lastHttpOk):"немає").append('\n')
+                .append("Показники (час): ").append(d.lastData>0?new java.util.Date(d.lastData):"немає").append('\n')
+                .append("Поля показників: ").append(LanDiagnostics.jsonKeys(d.values)).append('\n');
+            if(!d.errorCode.isEmpty())out.append("Остання помилка: ").append(d.errorCode).append("; ").append(d.errorAdvice).append('\n');
         }
         return out.toString();
     }
@@ -111,6 +133,7 @@ final class Controller {
         S60Device d;
         boolean newDevice;
         boolean mustProbe=false;
+        boolean mustReadOnly=false;
         synchronized(this) {
             d=devices.get(id);newDevice=d==null;
             if(d==null) {d=new S60Device(id);devices.put(id,d);}
@@ -121,11 +144,21 @@ final class Controller {
                     d.ip=ip;endpointChanged=true;d.lastHttpOk=0;
                 }
             }
-            if(fallbackIp!=null && !fallbackIp.equals(ip) && fallbackIp.matches("(?:\\d{1,3}\\.){3}\\d{1,3}"))d.fallbackIp=fallbackIp;
+            if(fallbackIp!=null && !fallbackIp.equals(ip) && LanDiagnostics.privateIpv4(fallbackIp))d.fallbackIp=fallbackIp;
             if(port>=1 && port<=65535 && port!=d.port){d.port=port;endpointChanged=true;d.lastHttpOk=0;}
             d.lastSource=from;d.lastSeen=System.currentTimeMillis();
-            d.encrypted=!"false".equalsIgnoreCase(attributes.get("encrypt"));
-            if(attributes.containsKey("type"))d.localType=attributes.get("type");
+            String encryptionFlag=attributes.getOrDefault("encrypt","true");
+            d.encrypted=!"false".equalsIgnoreCase(encryptionFlag) && !"0".equals(encryptionFlag);
+            if(attributes.containsKey("type"))d.localType=LanDiagnostics.shortText(attributes.get("type"));
+            if(attributes.containsKey("service_instance"))d.serviceInstance=LanDiagnostics.shortText(attributes.get("service_instance"));
+            String advertisedName=attributes.getOrDefault("devicename",attributes.getOrDefault("name", ""));
+            if(!advertisedName.isEmpty())d.advertisedName=LanDiagnostics.shortText(advertisedName);
+            String advertisedModel=attributes.getOrDefault("productmodel",attributes.getOrDefault("model", ""));
+            if(!advertisedModel.isEmpty())d.modelHint=LanDiagnostics.shortText(advertisedModel);
+            String advertisedFirmware=attributes.getOrDefault("fwversion","");
+            if(!advertisedFirmware.isEmpty())d.firmwareHint=LanDiagnostics.shortText(advertisedFirmware);
+            String hintedUiid=attributes.getOrDefault("uiid", "");
+            if(hintedUiid.matches("[0-9]{1,5}"))d.uiidHint=hintedUiid;
             d.hasKey=!keys.get(id).isEmpty();
             d.modelConfirmed=remembered.getBoolean(id,false);
             long now=System.currentTimeMillis();
@@ -133,12 +166,21 @@ final class Controller {
                 d.lastAutoProbe=now;
                 mustProbe=true;
             }
+            // Safe diagnostics only: run once initially and at most once per minute after address changes.
+            if(!d.hasKey && d.encrypted && LanDiagnostics.privateIpv4(d.ip)
+                    && (d.lastDiagnostic==0 || (endpointChanged && now-d.lastDiagnostic>60000))) {
+                d.lastDiagnostic=now;
+                mustReadOnly=true;
+            }
         }
         if(newDevice) {
             log.add("DEVICE.FOUND",id+" host="+d.ip+":"+d.port+" type="+d.localType+" encrypted="+d.encrypted+" via "+from);
-            if(d.encrypted && !d.hasKey)log.add("ACCESS.NOT_YET_AUTHORIZED",id+" visible through discovery, but encrypted control requires authorized device access");
+            log.add("DEVICE.MDNS",id+" "+LanDiagnostics.txtSummary(attributes));
+            log.add("MODEL.UNVERIFIED",id+" local type is NOT proof of a retail model or UIID; enhanced_plug may be a different Sonoff generation");
+            if(d.encrypted && !d.hasKey)log.add("ACCESS.NOT_YET_AUTHORIZED",id+" encrypted LAN; key absent; read-only diagnostics will run, relay writes disabled");
         }
         final S60Device readyDevice=d;
+        if(mustReadOnly)diagnostic.execute(()->readOnlyDiagnosis(readyDevice));
         if(mustProbe) network.execute(()->{
             request(readyDevice,"getState",new JSONObject(),false);
             if(readyDevice.authenticated)requestConfiguration(readyDevice);
@@ -146,6 +188,7 @@ final class Controller {
         StringBuilder enc=new StringBuilder();
         for(int i=1;i<=4;i++)enc.append(attributes.getOrDefault("data"+i,""));
         if(enc.length()>0) {
+            if(newDevice)log.add("MDNS.DATA",id+" state announced encrypted="+d.encrypted+" chars="+enc.length()+" iv="+attributes.containsKey("iv")+" keyStored="+d.hasKey);
             if(d.encrypted) {
                 String secret=keys.get(id);
                 if(!secret.isEmpty() && attributes.containsKey("iv")) {
@@ -233,14 +276,23 @@ final class Controller {
         if(!d.hasKey && d.encrypted) throw new Exception("Потрібне одноразове підтвердження доступу до розетки");
         if(!d.authenticated) throw new Exception("Спочатку дочекайтеся відповіді від розетки");
         if(d.ip.isEmpty())throw new Exception("Не вдалося встановити адресу розетки у мережі");
-        if(!d.localType.isEmpty() && !"plug".equals(d.localType))
-            throw new Exception("Знайдений пристрій не визначено як сумісну розетку");
-        if(!d.values.has("switch") && d.values.optJSONArray("switches")==null)
-            throw new Exception("Немає достовірної інформації про стан реле");
-        JSONObject data=new JSONObject().put("switches",new JSONArray().put(new JSONObject().put("outlet",0).put("switch",on?"on":"off")))
+        final String command;
+        final JSONObject data;
+        if("enhanced_plug".equals(d.localType) && d.values.has("switch")) {
+            // Older Sonoff metering switches use the single-switch endpoint, not S60 switches[].
+            command="switch";
+            data=new JSONObject().put("switch",on?"on":"off");
+        } else if((d.localType.isEmpty() || "plug".equals(d.localType)) &&
+                d.values.optJSONArray("switches")!=null) {
+            command="switches";
+            data=new JSONObject().put("switches",new JSONArray().put(new JSONObject().put("outlet",0).put("switch",on?"on":"off")))
                 .put("operSide",1);
+        } else if((d.localType.isEmpty() || "plug".equals(d.localType)) && d.values.has("switch")) {
+            command="switch";
+            data=new JSONObject().put("switch",on?"on":"off");
+        } else throw new Exception("Модель або команда керування реле не підтверджені");
         synchronized(this){d.pending=on?"on":"off";d.pendingSince=System.currentTimeMillis();}
-        network.execute(()->request(d,"switches",data,true));
+        network.execute(()->request(d,command,data,true));
         log.add("RELAY.QUEUED",id+" request="+(on?"on":"off")+"; awaiting hardware confirmation");
     }
     void poll(String id) throws Exception {
@@ -248,7 +300,11 @@ final class Controller {
         synchronized(this){d=devices.get(id);}
         if(d==null)throw new Exception("Unknown device");
         if(d.ip.isEmpty())throw new Exception("Розетку ще не знайдено в мережі");
-        if(d.encrypted && !d.hasKey)throw new Exception("Потрібен ключ пристрою");
+        if(d.encrypted && !d.hasKey) {
+            diagnostic.execute(()->readOnlyDiagnosis(d));
+            log.add("DIAG.MANUAL",id+" read-only diagnostic queued; relay writes disabled");
+            return;
+        }
         network.execute(()->{
             request(d,"getState",new JSONObject(),true);
             if(d.authenticated)requestConfiguration(d);
@@ -289,6 +345,83 @@ final class Controller {
         JSONObject data=new JSONObject().put("configure",settings);
         network.execute(()->request(d,"configure",data,true));
     }
+    /** Optional probes on a private local IPv4 only; no secret, cloud, reset, or relay changes.
+     * Some older Sonoff respond to getState even without keys, while S60 may only return
+     * encrypted data. A successful TCP/HTTP response is not authorization.
+     */
+    private void readOnlyDiagnosis(S60Device d) {
+        if(!LanDiagnostics.privateIpv4(d.ip)) {
+            log.add("DIAG.SKIP",d.id+" non-private or invalid IPv4 endpoint; no request sent");return;
+        }
+        final String address=d.ip;
+        final int port=d.port;
+        long started=System.currentTimeMillis();
+        try(Socket socket=LanDiagnostics.connectTcp(appContext,address,port,1700)) {
+            long latency=System.currentTimeMillis()-started;
+            d.diagnosticTcp="OPEN ("+latency+"ms)";
+            log.add("LAN.TCP.OK",d.id+" endpoint="+address+":"+port+" connected in "+latency+"ms; NOT authenticated");
+        }catch(Exception e) {
+            d.diagnosticTcp=e.getClass().getSimpleName();
+            d.diagnosticHttp="not attempted: TCP unavailable";
+            log.add("LAN.TCP.FAIL",d.id+" endpoint="+address+":"+port+" cause="+e.getClass().getSimpleName());
+            return;
+        }
+        for(String cmd:new String[]{"getState","info"}) {
+            try {
+                JSONObject payload=new JSONObject().put("sequence",String.valueOf(sequence.incrementAndGet()))
+                    .put("deviceid",d.id).put("selfApikey","123")
+                    .put("encrypt",false).put("data",new JSONObject());
+                HttpURLConnection conn=LanDiagnostics.deviceConnection(appContext,address,port,cmd);
+                conn.setConnectTimeout(1800);conn.setReadTimeout(2100);
+                conn.setInstanceFollowRedirects(false);
+                conn.setRequestMethod("POST");conn.setRequestProperty("Content-Type","application/json; charset=utf-8");
+                conn.setRequestProperty("Connection","close");conn.setDoOutput(true);
+                int status;
+                String raw;
+                try {
+                    try(OutputStream output=conn.getOutputStream()) {
+                        output.write(payload.toString().getBytes(StandardCharsets.UTF_8));
+                    }
+                    status=conn.getResponseCode();
+                    InputStream body=status<400?conn.getInputStream():conn.getErrorStream();
+                    ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+                    try(InputStream input=body) {
+                        if(input!=null){byte[] buffer=new byte[1024];int count;
+                            while((count=input.read(buffer))!=-1){
+                                if(bytes.size()+count>8192)throw new Exception("response-over-8KiB");
+                                bytes.write(buffer,0,count);
+                            }
+                        }
+                    }
+                    raw=bytes.toString("UTF-8");
+                } finally {conn.disconnect();}
+                JSONObject response=new JSONObject(raw);
+                int error=response.optInt("error",-1);
+                JSONObject plain=response.optJSONObject("data");
+                boolean encryptedBody=response.optString("data", "").length()>0 && response.has("iv");
+                boolean visible=false;
+                if(status==200 && error==0 && plain!=null) {
+                    synchronized(this){visible=d.observeReadOnly(plain);}
+                }
+                String outcome="HTTP="+status+" error="+error+" fields="+LanDiagnostics.jsonKeys(response)+
+                    " data="+(plain!=null?"object":encryptedBody?"encrypted":"unavailable")+
+                    " plaintextTelemetry="+visible;
+                d.diagnosticHttp=cmd+" "+outcome;
+                log.add("LAN.READONLY.REPLY",d.id+" cmd="+cmd+" "+outcome+"; NOT authorized");
+                if(visible) {
+                    log.add("LAN.READONLY.TELEMETRY",d.id+" unencrypted public state accepted; relay control remains blocked until verified");
+                    return;
+                }
+                // If current state was returned encrypted, retrying other endpoint will not unlock it.
+                if(encryptedBody)return;
+            }catch(Exception e){
+                d.diagnosticHttp=cmd+" "+e.getClass().getSimpleName();
+                log.add("LAN.READONLY.FAIL",d.id+" cmd="+cmd+" "+e.getClass().getSimpleName());
+            }
+        }
+        log.add("LAN.READONLY.RESULT",d.id+" completed without accessible state; encrypted telemetry requires authorized devicekey");
+    }
+
     /** Never send the device key or raw decrypted information to logs. */
     private void request(S60Device d,String command,JSONObject data,boolean manual) {
         request(d,command,data,manual,0);
@@ -308,7 +441,7 @@ final class Controller {
                 payload.put("encrypt",true);
             } else payload.put("data",data);
             String location="http://"+d.ip+":"+d.port+"/zeroconf/"+command;
-            HttpURLConnection connection=(HttpURLConnection)new URL(location).openConnection();
+            HttpURLConnection connection=LanDiagnostics.deviceConnection(appContext,d.ip,d.port,command);
             connection.setConnectTimeout(3500);connection.setReadTimeout(4500);
             connection.setRequestMethod("POST");connection.setRequestProperty("Content-Type","application/json; charset=utf-8");
             connection.setRequestProperty("Connection","close");connection.setDoOutput(true);
@@ -321,6 +454,7 @@ final class Controller {
                 if(input!=null)while((n=input.read(buf))!=-1){total+=n;if(total>65536)throw new Exception("response too large");bytes.write(buf,0,n);}
             } finally {connection.disconnect();}
             JSONObject response=new JSONObject(bytes.toString("UTF-8"));
+            if(manual || d.lastHttpOk==0) log.add("LAN.HTTP.RESPONSE",d.id+" cmd="+command+" http="+status+" responseKeys="+LanDiagnostics.jsonKeys(response));
             int error=response.optInt("error",-1);
             if(status>=400 || error!=0) {
                 synchronized(this){
@@ -333,7 +467,7 @@ final class Controller {
                         d.error="Розетка відхилила запит.";
                         d.errorCode=(error==401 || error==403)?"AUTH_REJECTED":"DEVICE_REJECTED";
                         d.errorAdvice=(error==401 || error==403)?"Пристрій відхилив доступ. Надішліть журнал подій.":"Пристрій відхилив команду. Надішліть журнал подій.";
-                        if(command.equals("switches"))d.pending="";
+                        if(command.equals("switches") || command.equals("switch"))d.pending="";
                     }
                 }
                 log.add("LAN.REPLY.ERROR",d.id+" cmd="+command+" http="+status+" device_error="+error);return;
@@ -350,12 +484,18 @@ final class Controller {
                     log.add("LAN.REPLY.DECRYPT.FAIL",d.id+" cmd="+command+" "+e.getClass().getSimpleName());
                 }
             } else if(response.optJSONObject("data")!=null) {
-                acceptState(d,response.optJSONObject("data"),"HTTP plain");
-                log.add("LAN.REPLY.STATE",d.id+" cmd="+command+" unencrypted state");
+                if(d.encrypted) {
+                    boolean gotTelemetry;
+                    synchronized(this){gotTelemetry=d.observeReadOnly(response.optJSONObject("data"));}
+                    log.add("LAN.REPLY.UNVERIFIED",d.id+" cmd="+command+" unexpected plaintext on encrypted endpoint; readOnlyTelemetry="+gotTelemetry+"; NOT authorized");
+                } else {
+                    acceptState(d,response.optJSONObject("data"),"HTTP plain");
+                    log.add("LAN.REPLY.STATE",d.id+" cmd="+command+" unencrypted state (advertised DIY)");
+                }
             } else {
                 log.add("LAN.REPLY.OK",d.id+" cmd="+command+" HTTP acknowledged; waiting for confirmed state via mDNS");
             }
-            if(manual && command.equals("switches")) {
+            if(manual && (command.equals("switches") || command.equals("switch"))) {
                 // Check actual state from the device rather than report success optimistically.
                 try {Thread.sleep(350);} catch(InterruptedException ignored){Thread.currentThread().interrupt();}
                 request(d,"getState",new JSONObject(),false);
@@ -396,7 +536,7 @@ final class Controller {
                 if(!command.equals("configure")) {
                     d.error=message;d.errorCode=reason;d.errorAdvice=advice;
                 }
-                if(command.equals("switches"))d.pending="";
+                if(command.equals("switches") || command.equals("switch"))d.pending="";
             }
             log.add("LAN.REQUEST.FAIL",d.id+" cmd="+command+" endpoint="+d.ip+":"+d.port+" code="+reason+" cause="+e.getClass().getSimpleName()+" detail="+e.getMessage());
         }

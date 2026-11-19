@@ -12,9 +12,9 @@ public final class LogBook {
     public synchronized void add(String stage, String detail) {
         String t = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT).format(new Date());
         String safe = detail == null ? "" : detail.replace('\n',' ').replace('\r',' ');
-        safe = safe.length() > 320 ? safe.substring(0,320) + "…" : safe;
+        safe = safe.length() > 750 ? safe.substring(0,750) + "…" : safe;
         lines.addLast(t + "  [" + stage + "] " + safe);
-        while (lines.size() > 500) lines.removeFirst();
+        while (lines.size() > 1500) lines.removeFirst();
     }
     public synchronized String asText() {
         StringBuilder out = new StringBuilder("Sonoff S60 — діагностичний журнал (секрети виключено)\n");
