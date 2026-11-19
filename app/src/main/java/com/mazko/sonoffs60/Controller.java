@@ -34,8 +34,10 @@ final class Controller {
     private final AtomicLong sequence=new AtomicLong(System.currentTimeMillis());
     private volatile long lastDiscoveryAt=System.currentTimeMillis();
     private volatile long lastApAttempt=0;
+    private volatile long lastPrivateServerCheck=0;
     private volatile boolean lastApConnected=false;
     private final ApPairingManager apManager;
+    private final LegacyPrivateServer privateServer;
     private volatile String apResult="Не перевірявся";
     private volatile String apLastSsid="";
     private final java.util.Set<String> alternateServices=java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -46,12 +48,13 @@ final class Controller {
         remembered=context.getSharedPreferences("confirmed_s60", Context.MODE_PRIVATE);
         discovery=new LanDiscovery(context,this,log);
         apManager=new ApPairingManager(context,this,log);
+        privateServer=new LegacyPrivateServer(context,this);
         log.add("APP", "Started S60 local control; official firmware untouched");
         refresh.scheduleAtFixedRate(() -> {
             ArrayList<S60Device> snapshot;
             synchronized(this){snapshot=new ArrayList<>(devices.values());}
             long now=System.currentTimeMillis();
-            for(S60Device d:snapshot) if((d.hasKey || !d.encrypted) && !d.ip.isEmpty() && now-d.lastSeen<120000 &&
+            for(S60Device d:snapshot) if(!privateServer.isConnected(d.id) && (d.hasKey || !d.encrypted) && !d.ip.isEmpty() && now-d.lastSeen<120000 &&
                   now-d.lastAutoProbe>20000 && (now-d.lastData>23000 || now-d.lastHttpOk>30000)) {
                 d.lastAutoProbe=now;
                 network.execute(() -> autoRead(d,false));
@@ -73,6 +76,10 @@ final class Controller {
                     });
                 }
             }
+            if(now-lastPrivateServerCheck>45000){
+                lastPrivateServerCheck=now;
+                diagnostic.execute(privateServer::startOrRefresh);
+            }
             if(now-lastDiscoveryAt>180000) {lastDiscoveryAt=now;discovery.rescan();}
         },10,12,TimeUnit.SECONDS);
     }
@@ -82,18 +89,21 @@ final class Controller {
         discovery.start();log.add("SCAN.AUTOMATIC","Automatic discovery enabled at startup");
         // Legacy SoftAP fallback scans for an actual ITEAD hotspot before requesting OS approval.
         apManager.scan();
+        diagnostic.execute(privateServer::startOrRefresh);
     }
-    void rescan() {rescanLanOnly();apManager.scan();}
+    void rescan() {rescanLanOnly();apManager.scan();diagnostic.execute(privateServer::startOrRefresh);}
     void rescanLanOnly() {discovery.rescan();lastDiscoveryAt=System.currentTimeMillis();log.add("SCAN", "Discovery query requested");
-        log.add("NET.ACTIVE",LanDiagnostics.wifiSnapshot(appContext));}
+        log.add("NET.ACTIVE",LanDiagnostics.wifiSnapshot(appContext));
+        diagnostic.execute(privateServer::startOrRefresh);}
     void scanApAfterPermissions() {apManager.scan();}
     void updateApProgress(String ssid,String result) {
         apLastSsid=(ssid==null||ssid.isEmpty())?"":LegacyApIdentity.safeSsid(ssid);apResult=result;
     }
-    void close(){apManager.close();discovery.stop();diagnostic.shutdownNow();network.shutdownNow();refresh.shutdownNow();}
+    void close(){privateServer.stop();apManager.close();discovery.stop();diagnostic.shutdownNow();network.shutdownNow();refresh.shutdownNow();}
     synchronized String diagnosticReport() {
         StringBuilder out=new StringBuilder("Sonoff S60 — детальна перевірка локального з’єднання (без секретів)\n");
         out.append("Мережа телефону: ").append(LanDiagnostics.wifiSnapshot(appContext)).append('\n');
+        out.append("Приватний сервер (старий Sonoff HTTPS/WSS): ").append(privateServer.status()).append('\n');
         out.append("Виявлено: ").append(devices.size()).append("; NSD/mDNS активні: ").append(discovery.isSearchReady()).append('\n');
         out.append("Керування реле можливе лише після верифікації ключа або відкритого DIY API.\n");
         out.append("Інші протоколи (лише виявлення): ").append(alternateServices.size()).append("; див. PROTOCOL.OTHER у журналі.\n");
@@ -158,6 +168,11 @@ final class Controller {
         boolean newDevice;
         boolean mustProbe=false;
         boolean mustReadOnly=false;
+        if(privateServer.isConnected(id)) {
+            // Do not downgrade a validated private-cloud session to unauthenticated mDNS.
+            log.add("PRIVATE.LAN.PARALLEL",id+" mDNS also present; session preserved");
+            return;
+        }
         synchronized(this) {
             d=devices.get(id);newDevice=d==null;
             if(d==null) {d=new S60Device(id);devices.put(id,d);}
@@ -259,12 +274,14 @@ final class Controller {
     private void acceptState(S60Device d,JSONObject received,String channel) {
         boolean confirmed;
         String requested;
+        int requestedOutlet;
         synchronized(this){
             requested=d.pending;
+            requestedOutlet=d.pendingOutlet;
             d.apply(received);
             confirmed=!requested.isEmpty() && d.pending.isEmpty();
         }
-        if(confirmed)log.add("RELAY.CONFIRMED",d.id+" relay="+requested+" confirmed via "+channel);
+        if(confirmed)log.add("RELAY.CONFIRMED",d.id+" outlet="+requestedOutlet+" relay="+requested+" confirmed via "+channel);
         if(System.currentTimeMillis()-d.lastStatusLog>60000) {
             d.lastStatusLog=System.currentTimeMillis();
             log.add("LAN.STATE.SAMPLE",d.id+" channel="+channel+" "+LanDiagnostics.telemetrySummary(received)+
@@ -321,6 +338,67 @@ final class Controller {
             log.add("LOCAL.PAIR.UNAVAILABLE",ex.getClass().getSimpleName()+" "+LegacyApIdentity.safeError(ex.getMessage()));throw ex;
         }
     }
+    /** Local private-cloud ingress: only an AP-verified or otherwise user-authorized device key is accepted. */
+    boolean legacyAuthorize(String id,String offered) {
+        return LegacyCloudProtocol.isDeviceId(id) && LegacyCloudProtocol.equalSecret(keys.get(id),offered);
+    }
+    synchronized void legacyRegister(String id,String model,String firmware,String remoteIp) {
+        S60Device d=devices.get(id);
+        if(d==null){d=new S60Device(id);devices.put(id,d);}
+        d.protocol="LEGACY_CLOUD_WSS";d.lastSource="private HTTPS/WSS server";
+        d.encrypted=true;d.hasKey=true;d.authenticated=true;
+        d.localType=model.toUpperCase(java.util.Locale.ROOT).contains("DUAL") ||
+            "PSF-B04-GL".equalsIgnoreCase(model)?"strip":"plug";
+        d.modelHint=LanDiagnostics.shortText(model);
+        d.firmwareHint=LanDiagnostics.shortText(firmware);
+        d.ip=remoteIp;d.lastSeen=System.currentTimeMillis();
+        d.errorCode="";d.error="";d.errorAdvice="";
+        d.accessReason="PRIVATE_SERVER_AUTHENTICATED; awaiting state update";
+        d.identifiedAs="private server reported: "+d.modelHint;
+        log.add("PRIVATE.DEVICE.REGISTERED",id+" model="+d.modelHint+" firmware="+d.firmwareHint+
+            " (private server credentials validated; state not yet verified)");
+    }
+    synchronized void legacyState(String id,JSONObject params) {
+        S60Device d=devices.get(id);
+        if(d==null||!privateServer.isConnected(id))return;
+        d.lastSeen=System.currentTimeMillis();
+        if(!LegacyCloudProtocol.hasRelayState(params)) {
+            d.observeReadOnly(params);
+            log.add("PRIVATE.STATE.METADATA",id+" no confirmed relay field");return;
+        }
+        acceptState(d,params,"PRIVATE.WSS");
+        d.accessReason="PRIVATE_SERVER_AUTHENTICATED_STATE";
+    }
+    synchronized JSONObject legacyQuery(String id,JSONArray requested)throws Exception {
+        JSONObject response=new JSONObject();
+        S60Device d=devices.get(id);
+        if(d==null||requested==null)return response;
+        java.util.Set<String> allowed=new java.util.HashSet<>(java.util.Arrays.asList(
+            "switch","switches","power","voltage","current","dayKwh","monthKwh","rssi","sledOnline","startup"));
+        for(int i=0;i<Math.min(20,requested.length());i++){
+            String field=requested.optString(i,"");
+            if(allowed.contains(field)&&d.values.has(field))response.put(field,d.values.get(field));
+        }
+        return response;
+    }
+    synchronized void legacyDisconnect(String id) {
+        S60Device d=devices.get(id);
+        if(d!=null && "LEGACY_CLOUD_WSS".equals(d.protocol)){
+            d.authenticated=false;d.lastSeen=0;d.pending="";
+            d.errorCode="PRIVATE_CONNECTION_LOST";
+            d.error="З'єднання з приватним сервером втрачено.";
+            d.errorAdvice="Перевірте Wi-Fi та серверний журнал.";
+        }
+    }
+    String privateServerStatus(){return privateServer.status();}
+    void provisionLegacy(String ssid,String password,boolean confirmed)throws Exception {
+        if(!confirmed)throw new Exception("Потрібна явна згода на зміну налаштувань Wi-Fi розетки");
+        if(!privateServer.isReady()) {
+            diagnostic.execute(privateServer::startOrRefresh);
+            throw new Exception("Приватний HTTPS-сервер ще не готовий. Повторіть після перевірки журналу.");
+        }
+        apManager.provisionToPrivateServer(ssid,password,privateServer.ip());
+    }
     synchronized void confirmModel(String id) throws Exception {
         S60Device d=devices.get(id);
         if(d==null)throw new Exception("Unknown device");
@@ -328,10 +406,23 @@ final class Controller {
         remembered.edit().putBoolean(id,true).apply();
         log.add("MODEL.CONFIRMED",id+" was explicitly confirmed as S60TPF by operator; unverified via mDNS");
     }
-    void relay(String id,boolean on) throws Exception {
+    void relay(String id,boolean on) throws Exception {relayOutlet(id,on,0);}
+    void relayOutlet(String id,boolean on,int outlet) throws Exception {
+        if(outlet<0||outlet>15)throw new Exception("Недопустимий номер каналу");
         final S60Device d;
         synchronized(this){d=devices.get(id);}
         if(d==null) throw new Exception("Unknown device");
+        if(privateServer.isConnected(id)) {
+            if(!d.authenticated || (d.lastData==0) ||
+                !(d.values.has("switch") || d.hasOutletZero()))
+                throw new Exception("Приватний сервер ще не отримав підтверджений стан реле");
+            if(outlet>0 && !d.hasOutlet(outlet))throw new Exception("Канал не підтверджений пристроєм");
+            Integer channel=d.hasOutletZero()?outlet:null;
+            if(!privateServer.relay(id,on,channel))throw new Exception("Не вдалося відправити команду через приватний сервер");
+            synchronized(this){d.pending=on?"on":"off";d.pendingOutlet=outlet;d.pendingSince=System.currentTimeMillis();}
+            log.add("RELAY.QUEUED",id+" private WebSocket request; confirmation pending");
+            return;
+        }
         if(!d.encrypted && !ProtocolRouter.trustedPlaintextRelay(d.protocol,d.localType,
              d.values.has("switch")||d.hasOutletZero(),d.plaintextHttpConfirmed))
             throw new Exception("Немає підтвердження відкритого керування для цієї моделі");
@@ -342,23 +433,23 @@ final class Controller {
         final JSONObject data;
         // Urban82 Plug selects /switch or /switches based on the ACTUAL decrypted state.
         // AlexxIT XSwitchPOWR3 includes operSide only for UIID190; TH uses extra fields.
-        if(d.hasOutletZero()) {
+        if(d.hasOutlet(outlet)) {
             command="switches";
             data=new JSONObject().put("switches",new JSONArray().put(
-                new JSONObject().put("outlet",0).put("switch",on?"on":"off")));
+                new JSONObject().put("outlet",outlet).put("switch",on?"on":"off")));
             if(SonoffProfiles.needsOperSide(d.uiidHint,d.localType,d.modelHint,true,
                   d.values.has("power") && d.values.has("current") && d.values.has("voltage"))) data.put("operSide",1);
-        } else if(d.values.has("switch")) {
+        } else if(outlet==0 && d.values.has("switch")) {
             command="switch";
             data=new JSONObject().put("switch",on?"on":"off");
             if(SonoffProfiles.thSwitchExtras(d.localType,d.uiidHint)) {
                 data.put("mainSwitch",on?"on":"off").put("deviceType","normal");
             }
-        } else throw new Exception("Розетка ще не підтвердила стан каналу 0");
+        } else throw new Exception("Розетка ще не підтвердила стан вибраного каналу");
         log.add("LAN.RELAY.PROFILE",id+" endpoint="+command+" uiid="+d.uiidHint+
-                " localType="+d.localType+" outlet0="+d.hasOutletZero()+
+                " localType="+d.localType+" outlet="+outlet+
                 " operSide="+data.has("operSide")+" modelConfirmed="+d.modelConfirmed);
-        synchronized(this){d.pending=on?"on":"off";d.pendingSince=System.currentTimeMillis();}
+        synchronized(this){d.pending=on?"on":"off";d.pendingOutlet=outlet;d.pendingSince=System.currentTimeMillis();}
         network.execute(()->request(d,command,data,true));
         log.add("RELAY.QUEUED",id+" request="+(on?"on":"off")+"; awaiting hardware confirmation");
     }

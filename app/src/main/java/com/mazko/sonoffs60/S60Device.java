@@ -42,23 +42,26 @@ final class S60Device {
     String error = "";
     String pending = "";
     long pendingSince = 0;
+    int pendingOutlet = 0;
     JSONObject values = new JSONObject();
     S60Device(String id) { this.id = id; }
-    boolean hasOutletZero() {
+    boolean hasOutletZero() {return hasOutlet(0);}
+    boolean hasOutlet(int outlet) {
         JSONArray arr=values.optJSONArray("switches");
         if(arr==null)return false;
         for(int i=0;i<arr.length();i++) {
             JSONObject row=arr.optJSONObject(i);
-            if(row!=null && row.optInt("outlet",-1)==0 && row.has("switch"))return true;
+            if(row!=null && row.optInt("outlet",-1)==outlet && row.has("switch"))return true;
         }
         return false;
     }
-    String outletZeroSwitch() {
+    String outletZeroSwitch() {return outletSwitch(0);}
+    String outletSwitch(int outlet) {
         JSONArray arr=values.optJSONArray("switches");
         if(arr==null)return "";
         for(int i=0;i<arr.length();i++) {
             JSONObject row=arr.optJSONObject(i);
-            if(row!=null && row.optInt("outlet",-1)==0)return row.optString("switch","");
+            if(row!=null && row.optInt("outlet",-1)==outlet)return row.optString("switch","");
         }
         return "";
     }
@@ -87,7 +90,8 @@ final class S60Device {
                     (values.has("switch") || hasOutletZero()) &&
                     ("plug".equals(localType)||"enhanced_plug".equals(localType)||"diy_plug".equals(localType)||
                      "th_plug".equals(localType)||"strip".equals(localType)))
-                .put("pending",pending).put("pendingSince",pendingSince)
+                .put("pending",pending).put("pendingSince",pendingSince).put("pendingOutlet",pendingOutlet)
+                .put("channels",publicChannels())
                 .put("firmware",values.optString("fwVersion",""))
                 .put("led",values.has("sledOnline") ? values.optString("sledOnline") : JSONObject.NULL)
                 .put("startup",getStartup())
@@ -100,6 +104,22 @@ final class S60Device {
         if (switches!=null && hasOutletZero()) relay = "on".equals(outletZeroSwitch());
         else if (values.has("switch")) relay = "on".equals(values.optString("switch"));
         return j.put("relay",relay);
+    }
+    /** Only state and channel number; do not export arbitrary decrypted device fields. */
+    private JSONArray publicChannels() {
+        JSONArray out=new JSONArray();
+        JSONArray channels=values.optJSONArray("switches");
+        if(channels==null)return out;
+        java.util.Set<Integer> seen=new java.util.HashSet<>();
+        for(int i=0;i<channels.length() && i<16;i++) {
+            JSONObject row=channels.optJSONObject(i);
+            if(row==null)continue;
+            int index=row.optInt("outlet",-1);String val=row.optString("switch","");
+            if(index<0||index>15||seen.contains(index)||!("on".equals(val)||"off".equals(val)))continue;
+            seen.add(index);
+            try{out.put(new JSONObject().put("outlet",index).put("on","on".equals(val)));}catch(Exception ignored){}
+        }
+        return out;
     }
     private Object getStartup() {
         JSONArray config=values.optJSONArray("configure");
@@ -153,7 +173,7 @@ final class S60Device {
         authenticated=true;
         if(!pending.isEmpty()) {
             JSONArray switches=values.optJSONArray("switches");
-            String confirmed=hasOutletZero()?outletZeroSwitch():values.optString("switch","");
+            String confirmed=hasOutlet(pendingOutlet)?outletSwitch(pendingOutlet):values.optString("switch","");
             if(pending.equals(confirmed))pending="";
         }
     }

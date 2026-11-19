@@ -6,8 +6,8 @@ android {
         applicationId 'com.mazko.sonoffs60'
         minSdk 26
         targetSdk 35
-        versionCode 10
-        versionName '1.5.0-auto-legacy-ap'
+        versionCode 12
+        versionName '1.7.0-multiroute-server-lab'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

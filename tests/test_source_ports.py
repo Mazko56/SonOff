@@ -19,8 +19,8 @@ class SourcePortTests(unittest.TestCase):
         self.assertIn('lastLedEchoProbe',controller)
     def test_relay_command_from_decrypted_state(self):
         controller=(JAVA/'Controller.java').read_text()
-        self.assertIn('if(d.hasOutletZero()) {',controller)
-        self.assertIn('else if(d.values.has("switch"))',controller)
+        self.assertIn('if(d.hasOutlet(outlet)) {',controller)
+        self.assertIn('else if(outlet==0 && d.values.has("switch"))',controller)
         self.assertIn('SonoffProfiles.needsOperSide',controller)
         self.assertIn('SonoffProfiles.thSwitchExtras',controller)
         self.assertIn('data.put("mainSwitch"',controller)

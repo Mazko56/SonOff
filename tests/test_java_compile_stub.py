@@ -9,7 +9,7 @@ STUBS={
 'org/json/JSONException.java':'''package org.json; public class JSONException extends Exception {public JSONException() {} public JSONException(String s){super(s);}}''',
 'org/json/JSONArray.java':'''package org.json; public class JSONArray {
  public JSONArray(){} public JSONArray put(Object a){return this;} public int length(){return 0;}
- public JSONObject optJSONObject(int i){return null;}
+ public JSONObject optJSONObject(int i){return null;} public String optString(int i,String def){return def;}
 }''',
 'org/json/JSONObject.java':'''package org.json; import java.util.*; public class JSONObject {
  public static final Object NULL=new Object(); public JSONObject(){} public JSONObject(String s)throws JSONException{}
@@ -41,8 +41,9 @@ STUBS={
  static String txtSummary(Map<String,String> m){return "";} static boolean privateIpv4(String s){return true;}
  static Socket connectTcp(Context c,String ip,int port,int timeout)throws IOException{return null;}
  static HttpURLConnection deviceConnection(Context c,String ip,int port,String cmd)throws IOException{return null;} }''',
+'com/mazko/sonoffs60/LegacyPrivateServer.java': 'package com.mazko.sonoffs60;import android.content.Context; final class LegacyPrivateServer { LegacyPrivateServer(Context c,Controller ctrl){} boolean isConnected(String id){return false;} void startOrRefresh(){} void stop(){} boolean isReady(){return false;} String status(){return "";} String ip(){return "";} boolean relay(String id,boolean on,Integer outlet){return false;} }',
 'com/mazko/sonoffs60/ApPairingManager.java':'''package com.mazko.sonoffs60; import android.content.Context;
- final class ApPairingManager {ApPairingManager(Context c,Controller b,LogBook l){} void scan(){} void close(){} boolean isConnecting(){return false;} }''',
+ final class ApPairingManager {ApPairingManager(Context c,Controller b,LogBook l){} void scan(){} void close(){} boolean isConnecting(){return false;} void provisionToPrivateServer(String s,String p,String ip){} }''',
 'com/mazko/sonoffs60/LocalPairingProbe.java':'''package com.mazko.sonoffs60; import android.content.Context;
  final class LocalPairingProbe {static class Result {String id="",key="";}
  static boolean canReadFromDeviceAp(Context c){return false;}
@@ -55,7 +56,7 @@ class CompileStubs(unittest.TestCase):
    for path,contents in STUBS.items():
     p=base/path;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(contents)
    paths=[str(p) for p in base.rglob('*.java')]
-   paths += [str(SRC/n) for n in ('LegacyApIdentity.java','SonoffProfiles.java','ProtocolRouter.java','Controller.java','LanCrypto.java','S60Device.java','LogBook.java')]
+   paths += [str(SRC/n) for n in ('LegacyApIdentity.java','SonoffProfiles.java','ProtocolRouter.java','LegacyCloudProtocol.java','Controller.java','LanCrypto.java','S60Device.java','LogBook.java')]
    result=subprocess.run(['javac','-d',str(base/'classes'),*paths],capture_output=True,text=True,timeout=30)
    self.assertEqual(result.returncode,0,result.stderr)
 if __name__=='__main__':unittest.main()

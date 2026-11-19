@@ -1,3 +1,11 @@
+# Sonoff Local v1.7.0 — multi-route private server (HARDWARE NOT QUALIFIED)
+
+**Warning: private-server support and broad LAN discovery do NOT prove 100% control of the customer's factory firmware. TLS pinning on some models can prevent legacy private server connections.**
+
+Prior v1.6: private LAN-bound HTTPS/WSS server (not the loopback WebView server), registered-device key verification, old AP `/ap` provisioning only with explicit consent, device-initiated `register/update/query`, multiple relay outlets, foreground-service runtime and corrected asynchronous Wi-Fi scan reporting. Original AES LAN, DIY, AlexxIT and Urban82 remain. See [docs/PRIVATE_SONOFF_SERVER.md](docs/PRIVATE_SONOFF_SERVER.md) for v1.6 design.
+
+**New v1.7:** two separate Wi-Fi-bound TLS ports (`1081` HTTPS dispatch + `8090` WSS), legacy WebSocket path `/` and `/api/ws`, 90-second single-use authenticated dispatch proof for old firmware session compatibility, WebSocket sequence echo and read-only desktop probe. **34/34** host-side tests passed. Full Android APK build and on-device verification are pending. See [12-project technical analysis](docs/RESEARCH_12_SONOFF_APPROACHES_20261119.md).
+
 # Sonoff S60 — Auto Local (experimental Android build)
 
 ## Що реально реалізовано
@@ -12,8 +20,8 @@
 ## Що не реалізовано / не підтверджено
 
 - Для **заводської S60TPF (не S60TPF-M)** офіційно не підтверджений `/device` AP endpoint. Отже автоматична первинна авторизація без eWeLink **не гарантується**.
-- Не реалізовано автоматичне передавання Wi-Fi SSID/пароля новій розетці; заводське первинне додавання до мережі без eWeLink не підтверджено.
-- Не доведено, що розетка сама може з'єднуватися із сервером телефона. Android-застосунок виступає LAN-клієнтом.
+- Передавання домашніх Wi-Fi-параметрів через legacy `/ap` є лише за **явної згоди користувача** та тільки для підтверджено сумісного старого AP. Безумовне первинне додавання сучасної S60TPF без eWeLink **не підтверджено**.
+- У v1.6 додано окремий HTTPS/WSS-сервер для старих сумісних Sonoff, але фізичний пристрій на заводській 3.6.4 не перевірено; modern certificate pinning може блокувати його.
 - Не перевірено роботу із фізичною S60TPF; на симуляторі можна тестувати тільки протокол, не можливості заводської прошивки.
 - Для Matter-моделі S60TPF-M потрібен окремий стек Matter та процедура commissioning, їх цей додаток не реалізує.
 

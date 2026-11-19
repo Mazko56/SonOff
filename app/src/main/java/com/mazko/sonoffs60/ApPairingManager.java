@@ -36,6 +36,7 @@ final class ApPairingManager {
     private final WifiManager wifi;
     private final ConnectivityManager connectivity;
     private final ExecutorService io=Executors.newSingleThreadExecutor();
+    private final java.util.concurrent.ScheduledExecutorService expiry=Executors.newSingleThreadScheduledExecutor();
     private final BroadcastReceiver receiver;
     private volatile boolean closed=false;
     private volatile boolean connecting=false;
@@ -43,6 +44,10 @@ final class ApPairingManager {
     private volatile long lastAttempt=0;
     private volatile long lastNoneLog=0;
     private volatile String lastSsid="";
+    /** Credentials kept in RAM only until the explicitly requested provisioning attempt. */
+    private volatile String provisionSsid;
+    private volatile String provisionPass;
+    private volatile String provisionIp;
     private ConnectivityManager.NetworkCallback callback;
     private boolean registered=false;
 
@@ -51,7 +56,11 @@ final class ApPairingManager {
         this.wifi=(WifiManager)this.context.getSystemService(Context.WIFI_SERVICE);
         this.connectivity=(ConnectivityManager)this.context.getSystemService(Context.CONNECTIVITY_SERVICE);
         receiver=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent intent){
-            if(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION.equals(intent.getAction()))io.execute(()->inspectResults("scan broadcast"));
+            if(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION.equals(intent.getAction())){
+                boolean fresh=intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED,false);
+                log.add("AP.SCAN.BROADCAST","System scan completed; resultsUpdated="+fresh);
+                io.execute(()->inspectResults(fresh?"fresh":"cached-after-broadcast"));
+            }
         }};
         if(Build.VERSION.SDK_INT>=29)try {
             IntentFilter filter=new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
@@ -71,18 +80,48 @@ final class ApPairingManager {
             log.add("AP.PERMISSION.MISSING","Nearby Wi-Fi / Location permission not granted; normal LAN continues");return;
         }
         long now=SystemClock.elapsedRealtime();
-        if(lastScan>0 && now-lastScan<SCAN_INTERVAL_MS){log.add("AP.SCAN.THROTTLED","Last AP check within 45 s; cached results will be evaluated");io.execute(()->inspectResults("cached"));return;}
+        if(lastScan>0 && now-lastScan<SCAN_INTERVAL_MS){
+            log.add("AP.SCAN.THROTTLED","Last scan within 45 s; waiting for next system scan; NO negative AP conclusion");
+            return;
+        }
         lastScan=now;
         io.execute(()->{
             try {
                 boolean accepted=wifi.startScan();
                 log.add("AP.SCAN.START","Legacy ITEAD AP nearby scan; Android accepted="+accepted+
                     "; system Location toggle may be required");
-                // A scan may be throttled; use only fresh cached results (do not join stale SSIDs).
-                inspectResults("cached");
+                // Only inspect once Android sends the asynchronous scan result broadcast.
+                if(!accepted){
+                    log.add("AP.SCAN.DEFERRED","Android rejected scan request; NO fresh AP results available");
+                    if(provisionSsid!=null){
+                        provisionSsid=null;provisionPass=null;provisionIp=null;
+                        log.add("PRIVATE.AP.CANCELLED","Provisioning cannot proceed without a fresh system scan");
+                    }
+                }
             }catch(SecurityException ex){log.add("AP.PERMISSION.DENIED",ex.getClass().getSimpleName());}
             catch(Exception ex){log.add("AP.SCAN.FAIL",ex.getClass().getSimpleName());}
         });
+    }
+
+    void provisionToPrivateServer(String ssid,String password,String serverIp) throws Exception {
+        if(!LegacyApProvision.validSsid(ssid)||!LegacyApProvision.validPassword(password))
+            throw new Exception("Вкажіть домашній Wi-Fi (SSID) і пароль від 8 символів");
+        if(!LanDiagnostics.privateIpv4(serverIp))throw new Exception("Немає приватної IP-адреси сервера");
+        if(closed||connecting)throw new Exception("Триває інше AP-підключення; повторіть після завершення");
+        if(context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED ||
+           (Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES)!=PackageManager.PERMISSION_GRANTED))
+            throw new Exception("Немає дозволу Android на пошук Wi-Fi");
+        provisionSsid=ssid;provisionPass=password;provisionIp=serverIp;
+        final String requested=ssid;
+        expiry.schedule(()->{
+            if(requested.equals(provisionSsid)){
+                provisionSsid=null;provisionPass=null;provisionIp=null;
+                log.add("PRIVATE.AP.EXPIRED","Provisioning request expired after 75s; no new settings submitted");
+            }
+        },75,java.util.concurrent.TimeUnit.SECONDS);
+        lastScan=0;lastAttempt=0;lastSsid="";
+        log.add("PRIVATE.AP.REQUEST","Explicit provisioning requested; credentials kept in RAM, never logged");
+        scan();
     }
 
     private void inspectResults(String source) {
@@ -106,13 +145,19 @@ final class ApPairingManager {
                 if(lastNoneLog==0 || SystemClock.elapsedRealtime()-lastNoneLog>30000) {
                     lastNoneLog=SystemClock.elapsedRealtime();
                     log.add("AP.SCAN.NONE","No recent ITEAD-* setup hotspot; LAN control remains unchanged; source="+source);
-                    controller.updateApProgress("","AP не виявлено; штатний LAN продовжує працювати");
+                    controller.updateApProgress("","AP не виявлено у результатах ("+source+"); LAN працює");
+                }
+                if(provisionSsid!=null){
+                    provisionSsid=null;provisionPass=null;provisionIp=null;
+                    log.add("PRIVATE.AP.CANCELLED","No matching ITEAD AP found; no settings changed");
                 }
                 return;
             }
             if(found.size()>1) {
                 log.add("AP.SCAN.MULTIPLE","Multiple ITEAD hotspots found ("+found.size()+"); no automatic target choice; retry with one plug in pairing mode");
-                controller.updateApProgress("","Знайдено кілька AP; вибір заблоковано задля безпеки");return;
+                controller.updateApProgress("","Знайдено кілька AP; вибір заблоковано задля безпеки");
+                provisionSsid=null;provisionPass=null;provisionIp=null;
+                return;
             }
             ScanResult target=found.get(0);
             long now=SystemClock.elapsedRealtime();
@@ -163,13 +208,20 @@ final class ApPairingManager {
         try {
             LocalPairingProbe.Result result=LocalPairingProbe.readFromNetwork(context,network,ssid,log);
             controller.acceptApKey(result,ssid);
+            // Enrollment requires explicit user consent and the device's authenticated AP response.
+            String ssidHome=provisionSsid,passHome=provisionPass,ipHome=provisionIp;
+            if(ssidHome!=null&&passHome!=null&&ipHome!=null) {
+                if(controller.privateServerStatus().contains("not listening"))throw new Exception("PRIVATE_SERVER_NOT_LISTENING");
+                LegacyApProvision.write(context,network,ssidHome,passHome,ipHome,LegacyPrivateServer.PORT,log);
+                controller.updateApProgress(ssid,"Налаштування приватного сервера прийнято; очікується WSS");
+            }
             log.add("AP.PROBE.SUCCESS","Local factory credential imported for "+result.id+
                 "; Wi-Fi onboarding is NOT implied; no cloud contact");
         }catch(Exception e){controller.updateApProgress(ssid,"AP /device не надав ключ ("+LegacyApIdentity.safeError(e.getMessage())+")");
             log.add("AP.PROBE.UNAVAILABLE",LegacyApIdentity.safeSsid(ssid)+" "+
             e.getClass().getSimpleName()+"; "+LegacyApIdentity.safeError(e.getMessage())+
             "; this model may not expose /device");}
-        finally {finish(cb);}
+        finally {provisionSsid=null;provisionPass=null;provisionIp=null;finish(cb);}
     }
     private synchronized void finish(ConnectivityManager.NetworkCallback cb) {
         if(callback!=cb)return;
@@ -183,7 +235,8 @@ final class ApPairingManager {
         closed=true;
         try {if(callback!=null)connectivity.unregisterNetworkCallback(callback);}catch(Exception ignored){}
         callback=null;connecting=false;
+        provisionSsid=null;provisionPass=null;provisionIp=null;
         if(registered)try{context.unregisterReceiver(receiver);}catch(Exception ignored){}
-        registered=false;io.shutdownNow();
+        registered=false;io.shutdownNow();expiry.shutdownNow();
     }
 }

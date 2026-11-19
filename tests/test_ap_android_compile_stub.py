@@ -8,7 +8,7 @@ JAVA=ROOT/'app/src/main/java/com/mazko/sonoffs60'
 STUBS={
 'android/Manifest.java': 'package android; public final class Manifest {public static final class permission {public static final String ACCESS_FINE_LOCATION="x",NEARBY_WIFI_DEVICES="y";}}',
 'android/content/pm/PackageManager.java': 'package android.content.pm; public final class PackageManager {public static final int PERMISSION_GRANTED=0;}',
-'android/content/Intent.java': 'package android.content; public class Intent {public String getAction(){return "";}}',
+'android/content/Intent.java': 'package android.content; public class Intent {public String getAction(){return "";}public boolean getBooleanExtra(String s,boolean d){return d;}}',
 'android/content/IntentFilter.java': 'package android.content; public class IntentFilter {public IntentFilter(String s) {}}',
 'android/content/BroadcastReceiver.java':'package android.content; public abstract class BroadcastReceiver {public abstract void onReceive(Context c,Intent i);}',
 'android/content/Context.java': '''package android.content;public class Context {
@@ -42,17 +42,20 @@ STUBS={
  public void onAvailable(Network n){} public void onUnavailable(){} public void onLost(Network n){} } }''',
 'android/net/wifi/ScanResult.java': 'package android.net.wifi;public class ScanResult{public String SSID;public long timestamp;public int level;}',
 'android/net/wifi/WifiManager.java':'''package android.net.wifi;import java.util.*;public class WifiManager {
- public static final String SCAN_RESULTS_AVAILABLE_ACTION="a";
+ public static final String SCAN_RESULTS_AVAILABLE_ACTION="a",EXTRA_RESULTS_UPDATED="b";
  public boolean startScan(){return true;}public List<ScanResult> getScanResults(){return new ArrayList<>();}}''',
 'android/net/wifi/WifiNetworkSpecifier.java':'''package android.net.wifi;public class WifiNetworkSpecifier {public static class Builder {
  public Builder setSsid(String s){return this;}public Builder setWpa2Passphrase(String p){return this;}
  public WifiNetworkSpecifier build(){return new WifiNetworkSpecifier();}}}''',
 'org/json/JSONObject.java':'''package org.json;public class JSONObject {public JSONObject(String s){} public JSONObject optJSONObject(String n){return null;}
  public String optString(String n,String d){return "";} }''',
+'com/mazko/sonoffs60/LegacyPrivateServer.java': 'package com.mazko.sonoffs60; final class LegacyPrivateServer {static final int PORT=1081;}',
+'com/mazko/sonoffs60/LegacyApProvision.java': 'package com.mazko.sonoffs60; import android.net.Network;import android.content.Context;final class LegacyApProvision {static boolean validSsid(String s){return true;}static boolean validPassword(String p){return true;}static void write(Context c,Network n,String s,String p,String i,int port,LogBook l){} }',
+'com/mazko/sonoffs60/LanDiagnostics.java': 'package com.mazko.sonoffs60;final class LanDiagnostics {static boolean privateIpv4(String s){return true;}}',
 'com/mazko/sonoffs60/LogBook.java':'''package com.mazko.sonoffs60;final class LogBook {void add(String a,String b){} }''',
 'com/mazko/sonoffs60/Controller.java':'''package com.mazko.sonoffs60; final class Controller {
  void acceptApKey(LocalPairingProbe.Result r,String s)throws Exception{}void rescanLanOnly(){}
- void updateApProgress(String s,String r){} }''',
+ void updateApProgress(String s,String r){} String privateServerStatus(){return "HTTPS";} }''',
 }
 class APJavaCompile(unittest.TestCase):
  def test_compile_actual_android_ap_classes(self):

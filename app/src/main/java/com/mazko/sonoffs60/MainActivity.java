@@ -40,7 +40,12 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         try {
-            controller=new Controller(getApplicationContext());
+            controller=SonoffRuntime.get(getApplicationContext());
+            try {
+                Intent background=new Intent(this,SonoffForegroundService.class);
+                if(Build.VERSION.SDK_INT>=26)startForegroundService(background);
+                else startService(background);
+            }catch(Exception ex){controller.log.add("RUNTIME.FOREGROUND.FAIL",ex.getClass().getSimpleName());}
             panel=new LocalHttpServer(getApplicationContext(),controller,localToken);
             panel.start();
             web=new WebView(this);
@@ -60,7 +65,6 @@ public final class MainActivity extends Activity {
             });
             setContentView(web);
             web.loadUrl("http://127.0.0.1:"+localPort+"/");
-            controller.begin();
             requestNearbyWifiPermissions();
         } catch(Exception e) {
             TextView t=new TextView(this);
@@ -92,7 +96,7 @@ public final class MainActivity extends Activity {
         if(controller!=null)controller.rescan();
     }
     @Override public void onDestroy() {
-        if(controller!=null)controller.close();
+        // The foreground service owns device connections; destroying a WebView must NOT kill the device server.
         if(panel!=null)panel.stop();
         if(web!=null) {web.removeJavascriptInterface("SonoffNative");web.destroy();}
         super.onDestroy();

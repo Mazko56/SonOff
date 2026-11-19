@@ -104,8 +104,10 @@ final class LocalHttpServer {
             JSONObject payload=length==0?new JSONObject():new JSONObject(new String(raw,StandardCharsets.UTF_8));
             switch(path) {
                 case "/api/scan":controller.rescan();json(out,202,new JSONObject().put("ok",true));break;
+                case "/api/provision":controller.provisionLegacy(payload.optString("ssid"),payload.optString("password"),
+                    payload.optBoolean("confirm"));json(out,202,new JSONObject().put("queued",true));break;
                 case "/api/confirm":controller.confirmModel(payload.optString("id"));json(out,200,new JSONObject().put("ok",true));break;
-                case "/api/relay":controller.relay(payload.optString("id"),payload.optBoolean("on"));json(out,202,new JSONObject().put("queued",true));break;
+                case "/api/relay":controller.relayOutlet(payload.optString("id"),payload.optBoolean("on"),payload.optInt("outlet",0));json(out,202,new JSONObject().put("queued",true));break;
                 case "/api/poll":controller.poll(payload.optString("id"));json(out,202,new JSONObject().put("queued",true));break;
                 case "/api/led":controller.led(payload.optString("id"),payload.optBoolean("on"));json(out,202,new JSONObject().put("queued",true));break;
                 case "/api/startup":controller.startup(payload.optString("id"),payload.optString("mode"));json(out,202,new JSONObject().put("queued",true));break;

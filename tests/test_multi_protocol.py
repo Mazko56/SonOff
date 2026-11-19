@@ -32,7 +32,9 @@ class MultiProtocolTests(unittest.TestCase):
    proc=subprocess.run(['java','-cp',directory,'com.mazko.sonoffs60.ProtocolRouterSelfTest'],capture_output=True,text=True)
    self.assertEqual(proc.returncode,0,proc.stderr)
    self.assertIn('PASS',proc.stdout)
- def test_html_byte_preserved_except_nothing(self):
-  expected='78c90eb833d733bdbd99151581375eae17f5f1fa0db4f1a35c91844e7c2c61d9'
-  self.assertEqual(__import__('hashlib').sha256((ROOT/'app/src/main/assets/index.html').read_bytes()).hexdigest(),expected)
+ def test_existing_design_and_explicit_legacy_optin(self):
+  html=(ROOT/'app/src/main/assets/index.html').read_text()
+  for literal in ('Мої пристрої','Пошук пристроїв','Журнал подій','/api/provision','provisionConfirm'):
+   self.assertIn(literal,html)
+  self.assertNotIn('localStorage.setItem',html)
 if __name__=='__main__':unittest.main()
