@@ -1,3 +1,22 @@
+## Оновлення 1.7.1: виправлення збірки GitHub Actions
+
+Виправлено збій збірки APK через застарілий тест `claimLocal()`: кнопка
+видалена у поточному інтерфейсі, отже тест повинен перевіряти її **відсутність**.
+Додано `tests/test_ui_javascript.py`: перевірка синтаксису фактичного JS у WebView
+через Node.js і відповідності HTML-обробників функціям.
+У GitHub Actions Node.js встановлюється перед тестами.
+
+Якщо вихідні ZIP накладалися один на одного через `Expand-Archive -Force`,
+застарілі тести могли залишитися в `C:\sonoff\tests`. Запустіть
+`scripts/sync_tests_windows.ps1` із параметром `-ArchivePath`: скрипт
+архівує лише тести `test_*.py`, відсутні у ZIP, у тимчасовій папці, а не видаляє їх без копії.
+
+Перевірка пакета: 37/37 локальних тестів; повну Android Gradle-збірку
+підтвердить лише GitHub Actions / Android SDK. Протокол фізичної
+розетки це виправлення не змінює.
+
+---
+
 # Sonoff Local v1.7.0 — multi-route private server (HARDWARE NOT QUALIFIED)
 
 **Warning: private-server support and broad LAN discovery do NOT prove 100% control of the customer's factory firmware. TLS pinning on some models can prevent legacy private server connections.**
