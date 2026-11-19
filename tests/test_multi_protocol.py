@@ -34,7 +34,8 @@ class MultiProtocolTests(unittest.TestCase):
    self.assertIn('PASS',proc.stdout)
  def test_existing_design_and_explicit_legacy_optin(self):
   html=(ROOT/'app/src/main/assets/index.html').read_text()
-  for literal in ('Мої пристрої','Пошук пристроїв','Журнал подій','/api/provision','provisionConfirm'):
+  for literal in ('Мої пристрої','Пошук пристроїв','Журнал подій','Поділитися журналом'):
    self.assertIn(literal,html)
   self.assertNotIn('localStorage.setItem',html)
+  self.assertNotIn('/api/provision',html)
 if __name__=='__main__':unittest.main()

@@ -89,6 +89,12 @@ final class LocalHttpServer {
             if(method.equals("GET") && path.equals("/api/logs")) {
                 json(out,200,new JSONObject().put("lines",log.asJson()));return;
             }
+            if(method.equals("GET") && path.equals("/api/oauth/status")) {
+                json(out,200,controller.oauth.info());return;
+            }
+            if(method.equals("GET") && path.equals("/api/gateway")) {
+                json(out,200,new JSONObject().put("status",controller.gateway.status()).put("port",AndroidGatewayServer.PORT));return;
+            }
             if(!method.equals("POST") || !path.startsWith("/api/")) {
                 json(out,404,new JSONObject().put("error","Not found"));return;
             }
@@ -104,8 +110,12 @@ final class LocalHttpServer {
             JSONObject payload=length==0?new JSONObject():new JSONObject(new String(raw,StandardCharsets.UTF_8));
             switch(path) {
                 case "/api/scan":controller.rescan();json(out,202,new JSONObject().put("ok",true));break;
-                case "/api/provision":controller.provisionLegacy(payload.optString("ssid"),payload.optString("password"),
-                    payload.optBoolean("confirm"));json(out,202,new JSONObject().put("queued",true));break;
+                case "/api/oauth/start":
+                    String login=controller.oauth.start(payload.optString("appId"),payload.optString("appSecret"),payload.optString("redirectUrl"));
+                    json(out,200,new JSONObject().put("loginUrl",login));break;
+                case "/api/oauth/exchange":
+                    controller.oauth.acceptCallback(payload.optString("callbackUrl"),payload.optString("region","eu"));
+                    json(out,202,new JSONObject().put("started",true));break;
                 case "/api/confirm":controller.confirmModel(payload.optString("id"));json(out,200,new JSONObject().put("ok",true));break;
                 case "/api/relay":controller.relayOutlet(payload.optString("id"),payload.optBoolean("on"),payload.optInt("outlet",0));json(out,202,new JSONObject().put("queued",true));break;
                 case "/api/poll":controller.poll(payload.optString("id"));json(out,202,new JSONObject().put("queued",true));break;

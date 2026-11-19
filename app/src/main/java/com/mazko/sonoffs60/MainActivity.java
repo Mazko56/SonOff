@@ -6,6 +6,7 @@ import android.os.Build;
 import android.content.pm.PackageManager;
 import java.util.ArrayList;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
@@ -27,11 +28,22 @@ public final class MainActivity extends Activity {
     }
     private class NativeApi {
         @JavascriptInterface public String getAuthToken() {return localToken;}
+        @JavascriptInterface public String gatewayToken() {
+            return controller==null?"":controller.gateway.tokenForOwner();
+        }
+        @JavascriptInterface public void openEwelinkAuthorization(String uri) {
+            try {
+                Uri target=Uri.parse(uri);
+                if(!"https".equals(target.getScheme()) || !"c2ccdn.coolkit.cc".equals(target.getHost()) ||
+                    !"/oauth/index.html".equals(target.getPath()))return;
+                runOnUiThread(()->startActivity(new Intent(Intent.ACTION_VIEW,target)));
+            } catch(Exception ignored){}
+        }
         @JavascriptInterface public void shareLogs() {
             runOnUiThread(()->{
                 Intent send=new Intent(Intent.ACTION_SEND);
                 send.setType("text/plain");
-                send.putExtra(Intent.EXTRA_SUBJECT,"Діагностика Sonoff S60");
+                send.putExtra(Intent.EXTRA_SUBJECT,"Діагностика Sonoff Gateway");
                 send.putExtra(Intent.EXTRA_TEXT,controller.diagnosticReport()+"\n"+controller.log.asText());
                 startActivity(Intent.createChooser(send,"Поділитися діагностикою"));
             });
@@ -88,7 +100,7 @@ public final class MainActivity extends Activity {
             for(int g:grants)if(g!=PackageManager.PERMISSION_GRANTED)granted=false;
             controller.log.add(granted?"AP.PERMISSION.GRANTED":"AP.PERMISSION.DENIED",
                     granted?"Nearby Wi-Fi scan permission granted":"AP fallback disabled; ordinary LAN discovery remains active");
-            if(granted)controller.scanApAfterPermissions();
+            if(granted)controller.rescan();
         }
     }
     @Override public void onResume() {

@@ -41,13 +41,9 @@ STUBS={
  static String txtSummary(Map<String,String> m){return "";} static boolean privateIpv4(String s){return true;}
  static Socket connectTcp(Context c,String ip,int port,int timeout)throws IOException{return null;}
  static HttpURLConnection deviceConnection(Context c,String ip,int port,String cmd)throws IOException{return null;} }''',
-'com/mazko/sonoffs60/LegacyPrivateServer.java': 'package com.mazko.sonoffs60;import android.content.Context; final class LegacyPrivateServer { LegacyPrivateServer(Context c,Controller ctrl){} boolean isConnected(String id){return false;} void startOrRefresh(){} void stop(){} boolean isReady(){return false;} String status(){return "";} String ip(){return "";} boolean relay(String id,boolean on,Integer outlet){return false;} }',
-'com/mazko/sonoffs60/ApPairingManager.java':'''package com.mazko.sonoffs60; import android.content.Context;
- final class ApPairingManager {ApPairingManager(Context c,Controller b,LogBook l){} void scan(){} void close(){} boolean isConnecting(){return false;} void provisionToPrivateServer(String s,String p,String ip){} }''',
-'com/mazko/sonoffs60/LocalPairingProbe.java':'''package com.mazko.sonoffs60; import android.content.Context;
- final class LocalPairingProbe {static class Result {String id="",key="";}
- static boolean canReadFromDeviceAp(Context c){return false;}
- static Result readFromDeviceAp(Context c)throws Exception{return new Result();} }''',
+'com/mazko/sonoffs60/AndroidGatewayServer.java': 'package com.mazko.sonoffs60;import android.content.Context; final class AndroidGatewayServer { AndroidGatewayServer(Context c,Controller ctrl){} void startOrRefresh(){} void stop(){} String status(){return "";} }',
+'com/mazko/sonoffs60/EwelinkOAuth.java': 'package com.mazko.sonoffs60; final class EwelinkOAuth {EwelinkOAuth(Controller c){} void close(){} }',
+
 }
 class CompileStubs(unittest.TestCase):
  def test_compile_controller_and_data_model(self):
@@ -56,7 +52,7 @@ class CompileStubs(unittest.TestCase):
    for path,contents in STUBS.items():
     p=base/path;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(contents)
    paths=[str(p) for p in base.rglob('*.java')]
-   paths += [str(SRC/n) for n in ('LegacyApIdentity.java','SonoffProfiles.java','ProtocolRouter.java','LegacyCloudProtocol.java','Controller.java','LanCrypto.java','S60Device.java','LogBook.java')]
+   paths += [str(SRC/n) for n in ('SonoffProfiles.java','ProtocolRouter.java','Controller.java','LanCrypto.java','S60Device.java','LogBook.java')]
    result=subprocess.run(['javac','-d',str(base/'classes'),*paths],capture_output=True,text=True,timeout=30)
    self.assertEqual(result.returncode,0,result.stderr)
 if __name__=='__main__':unittest.main()

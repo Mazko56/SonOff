@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101724"><title>Sonoff S60</title>
+<html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101724"><title>Sonoff</title>
 <style>
 :root{color-scheme:dark;--bg:#0c111c;--surface:#151d2c;--panel:#192335;--line:#2a374d;--text:#f2f5fc;--muted:#9caecb;--primary:#668eff;--green:#64ddb6;--red:#fb8087;--amber:#efc27d;--shadow:#05091288}
 *{box-sizing:border-box}body{background:var(--bg);color:var(--text);font:15px/1.48 system-ui,-apple-system,Roboto,Arial,sans-serif;margin:0}button,input,select{font:inherit}button{cursor:pointer;border:1px solid var(--line);background:#273449;color:var(--text);border-radius:12px;padding:12px 16px;font-weight:650;min-height:44px}button:disabled{opacity:.35;cursor:default}button:active:not(:disabled){transform:scale(.99)}button.accent{background:#416ee0;border-color:#557ff1;color:white}button.on{background:#176450;border-color:#237b61}button.off{background:#403042;border-color:#80535c}button.flat{background:transparent}button.small{padding:8px 11px;min-height:36px;font-size:13px}
@@ -8,7 +8,7 @@ main{max-width:860px;margin:auto;padding:env(safe-area-inset-top) 18px 92px}.top
 .panel{background:linear-gradient(160deg,#1b2639,#151d2c);border:1px solid #29364b;border-radius:22px;padding:21px;margin-bottom:17px;box-shadow:0 7px 25px var(--shadow)}.heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:25px 1px 13px}.heading h2{font-size:15px;margin:0;color:#bdcbe2;font-weight:700}.muted{color:var(--muted);font-size:13px}.status{border-radius:100px;font-size:12px;font-weight:700;padding:6px 10px;background:#203e38;color:var(--green);display:inline-block}.status.lost{background:#3d2d2e;color:var(--red)}.status.wait{background:#413b2c;color:var(--amber)}.head{display:flex;align-items:center;justify-content:space-between;gap:8px}.device-title{margin:4px 0;font-weight:750;font-size:21px;letter-spacing:-.4px}.subtle{font-size:12px;color:#91a3c1}.relay{border:1px solid #334158;background:#111b2b;border-radius:16px;padding:16px;margin-top:18px;display:flex;align-items:center;justify-content:space-between;gap:10px}.relay-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.relay-channel{padding:13px;border:1px solid var(--line);border-radius:14px;background:#111b2b}.relay-channel .actions{margin-top:10px}.relay-channel .actions button{padding:8px;font-size:13px;min-height:38px}.relay strong{font-size:17px}.relay span{font-size:13px;color:var(--muted)}.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:13px 0 18px}.metric{background:#111b2a;border:1px solid #29364e;border-radius:14px;padding:15px 11px;min-width:0}.metric b{font-size:22px;font-weight:800;letter-spacing:-.65px;display:block;white-space:nowrap}.metric b small{font-size:11px;font-weight:500;color:var(--muted);letter-spacing:0}.metric span{display:block;color:var(--muted);font-size:12px;margin-top:5px}.actions{display:flex;gap:10px}.actions button{flex:1}.notice{padding:13px 14px;margin:15px 0;background:#252a39;border:1px solid #3d465a;border-radius:13px;color:#d9e2f2;font-size:13px}.notice.error{background:#35262e;border-color:#633847;color:#ffb7bf}.notice strong{color:white}.form-label{font-size:13px;color:#c3d1e8;display:block;margin:8px 0}.keyrow{display:flex;gap:9px}.keyrow input{flex:1;min-width:0}.support-head{display:flex;align-items:center;justify-content:space-between}.support-head h3{font-size:15px;margin:0}.row{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:14px}.row button,.row select{max-width:195px}.hide{display:none!important}.empty{text-align:center;padding:36px 15px}.empty .symbol{display:block;font-size:42px;color:#b4c9ff;margin-bottom:7px}.empty h3{font-size:18px;margin:6px 0}.empty p{color:var(--muted);font-size:14px;max-width:380px;margin:9px auto 22px}.footer{font-size:12px;color:#8295b5;text-align:center;margin-top:30px}.log{max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-word;font:11px/1.7 ui-monospace,Consolas,monospace;background:#080f1a;border:1px solid #2a3445;border-radius:13px;padding:12px;color:#c5d4ed;margin-top:14px}.tabbar{display:flex;gap:9px;margin-bottom:17px}.tabbar button{flex:1}.tabbar .selected{background:#294e90;border-color:#567dbf}.indicator{width:9px;height:9px;border-radius:50%;background:var(--green);display:inline-block;margin-right:5px}.indicator.no{background:var(--amber)}#toast{position:fixed;z-index:40;bottom:22px;left:18px;right:18px;max-width:810px;margin:auto;background:#293c59;padding:14px;border:1px solid #5271a3;border-radius:14px;box-shadow:0 15px 32px #0009;display:none}#toast.show{display:block}
 @media(max-width:430px){main{padding-left:13px;padding-right:13px}.panel{padding:17px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metric b{font-size:21px}.row button,.row select{max-width:52%}.top h1{font-size:21px}}
 </style></head><body><main>
-<header class="top"><div class="brand-icon">S</div><div><h1>Sonoff S60</h1><p>Пристрої вашого дому</p></div><button class="flat small" onclick="setTab('help')" aria-label="Допомога">Допомога</button></header>
+<header class="top"><div class="brand-icon">S</div><div><h1>Sonoff</h1><p>Пристрої вашого дому</p></div><button class="flat small" onclick="setTab('help')" aria-label="Допомога">Допомога</button></header>
 <div id="homeScreen">
 <section class="panel"><div class="head"><div><strong>Пошук пристроїв</strong><div id="networkNote" class="muted">Шукаємо розетки поруч у мережі Wi-Fi</div></div><button class="accent small" onclick="action('/api/scan',{})">↻ Шукати</button></div></section>
 <div class="heading"><h2>Мої пристрої</h2><span id="deviceCount" class="muted">0</span></div><div id="devices"></div>
@@ -18,13 +18,22 @@ main{max-width:860px;margin:auto;padding:env(safe-area-inset-top) 18px 92px}.top
 <section class="panel">
   <div class="support-head"><h3>Журнал подій</h3><button class="small" onclick="getLogs()">Оновити</button></div>
   <div class="actions" style="margin-top:15px"><button class="accent" onclick="shareLogs()">Поділитися журналом</button></div>
-  <details style="margin-top:17px"><summary class="muted" style="cursor:pointer">Підключення через власний сервер (старі Sonoff)</summary>
-    <div class="notice">Експериментальна сумісність: лише моделі, що підтримують власний HTTPS/WebSocket-сервер. Нові заводські прошивки можуть блокувати його перевіркою сертифіката. Для нового підключення переведіть ОДНУ розетку в режим ITEAD-AP. Ця дія змінює її Wi-Fi і серверні налаштування; для відновлення може знадобитися первинне налаштування.</div>
-    <label class="form-label" for="homeSsid">Назва домашньої мережі Wi-Fi</label><input id="homeSsid" maxlength="32" autocomplete="off" placeholder="SSID" />
-    <label class="form-label" for="homePass">Пароль домашньої мережі Wi-Fi</label><input id="homePass" maxlength="63" autocomplete="off" type="password" placeholder="Пароль Wi-Fi" />
-    <label class="muted" style="display:flex;align-items:center;gap:8px;margin:16px 0"><input id="provisionConfirm" type="checkbox" style="width:18px;min-height:18px" /> Підтверджую зміну налаштувань вибраної розетки</label>
-    <button class="accent" onclick="provisionDevice()">Підключити до приватного сервера</button>
-    <div class="muted" style="margin-top:8px">Пароль передається лише напряму до локальної точки доступу розетки; застосунок його не зберігає. Інтернет у домашній мережі вимикати не потрібно.</div>
+  <details style="margin-top:17px">
+    <summary class="muted" style="cursor:pointer">Доступ eWeLink</summary>
+    <div class="muted" style="margin:12px 0">Одноразовий імпорт ключів пристроїв через дозвіл власника. Налаштування розеток не змінюються.</div>
+    <label class="form-label" for="oauthAppId">App ID</label><input id="oauthAppId" autocomplete="off" placeholder="App ID розробника" />
+    <label class="form-label" for="oauthSecret">App Secret</label><input id="oauthSecret" autocomplete="off" type="password" placeholder="App Secret" />
+    <label class="form-label" for="oauthRedirect">Redirect URL (із налаштувань App ID)</label><input id="oauthRedirect" value="https://127.0.0.1/callback" autocomplete="off" />
+    <button class="accent" style="margin-top:12px;width:100%" onclick="oauthStart()">Авторизувати доступ</button>
+    <label class="form-label" for="oauthCallback">Адреса після авторизації</label><input id="oauthCallback" placeholder="Вставте повну адресу із браузера" autocomplete="off" />
+    <div class="row"><select id="oauthRegion"><option value="eu">Європа</option><option value="us">Америка</option><option value="as">Азія</option><option value="cn">Китай</option></select><button class="accent" onclick="oauthImport()">Імпортувати</button></div>
+    <div id="oauthStatus" class="muted" style="margin-top:8px">—</div>
+  </details>
+  <details style="margin-top:17px">
+    <summary class="muted" style="cursor:pointer">Локальний сервер</summary>
+    <div id="gatewayStatus" class="muted" style="margin:12px 0">Перевірка сервера</div>
+    <button class="small" onclick="showGatewayToken()">Показати ключ доступу шлюзу</button>
+    <input id="gatewayToken" type="password" readonly class="hide" style="margin-top:10px" />
   </details>
   <details style="margin-top:17px"><summary class="muted" style="cursor:pointer">Переглянути події</summary><div id="logText" class="log">Подій поки немає</div></details>
 </section>
@@ -87,17 +96,37 @@ async function getLogs(){
     el('logText').textContent='Не вдалося завантажити журнал';
   }
 }
-async function provisionDevice(){
- const ssid=el('homeSsid').value,password=el('homePass').value;
- const confirm=el('provisionConfirm').checked;
- if(!confirm){toast('Підтвердьте зміну налаштувань розетки.');return;}
- if(!ssid || password.length<8){toast('Вкажіть назву Wi-Fi і пароль від 8 символів.');return;}
- const ok=await action('/api/provision',{ssid,password,confirm});
- el('homePass').value=''; // Never persist credentials in the DOM or local storage.
- if(ok)toast('Запит на AP-підключення надіслано. Стежте за діагностикою.');
-}
 async function relay(id,on,outlet=0){if(await action('/api/relay',{id,on,outlet}))toast('Команду передано. Чекаємо підтвердження розетки.')}
 async function changeStartup(id,mode){if(await action('/api/startup',{id,mode}))toast('Налаштування передано. Перевіряємо відповідь розетки.')}
 function shareLogs(){if(window.SonoffNative&&window.SonoffNative.shareLogs)window.SonoffNative.shareLogs();else toast('Поширення доступне у застосунку Android')}
-refresh();setInterval(refresh,2500);
+async function panelGet(path){const r=await fetch(path,{cache:'no-store',headers:{'X-Sonoff-Token':token}});if(!r.ok)throw Error('Помилка сервера');return r.json()}
+async function oauthStart(){
+ const a=el('oauthAppId').value.trim(),secret=el('oauthSecret').value,redirectUrl=el('oauthRedirect').value.trim();
+ try{
+  const r=await fetch('/api/oauth/start',{method:'POST',headers:{'Content-Type':'application/json','X-Sonoff-Panel':'1','X-Sonoff-Token':token},body:JSON.stringify({appId:a,appSecret:secret,redirectUrl})});
+  const j=await r.json();if(!r.ok)throw Error(j.error||'Помилка авторизації');
+  el('oauthSecret').value='';
+  if(window.SonoffNative && window.SonoffNative.openEwelinkAuthorization)window.SonoffNative.openEwelinkAuthorization(j.loginUrl);
+  else toast('Відкрийте сторінку eWeLink у браузері.');
+  el('oauthStatus').textContent='Очікуємо авторизацію';
+ }catch(e){toast(e.message)}
+}
+async function oauthImport(){
+ const callbackUrl=el('oauthCallback').value.trim(),region=el('oauthRegion').value;
+ try{const r=await fetch('/api/oauth/exchange',{method:'POST',headers:{'Content-Type':'application/json','X-Sonoff-Panel':'1','X-Sonoff-Token':token},body:JSON.stringify({callbackUrl,region})});
+ const j=await r.json();if(!r.ok)throw Error(j.error||'Помилка імпорту');el('oauthCallback').value='';
+ el('oauthStatus').textContent='Імпорт ключів…';
+ }catch(e){toast(e.message)}
+}
+async function updateAuth(){
+ if(tab!=='help')return;
+ try {let o=await panelGet('/api/oauth/status');el('oauthStatus').textContent=o.status==='complete'?`Ключів імпортовано: ${o.imported}`:o.status==='working'?'Імпорт ключів…':o.status==='failed'?`Помилка: ${o.error}`:o.status==='no_keys_returned'?'Відсутні доступні ключі':o.status==='awaiting_authorization'?'Очікуємо авторизацію':'—';}catch(e){}
+ try {let g=await panelGet('/api/gateway');el('gatewayStatus').textContent=g.status;}catch(e){}
+}
+function showGatewayToken(){
+ if(!window.SonoffNative||!window.SonoffNative.gatewayToken)return;
+ const node=el('gatewayToken');node.value=window.SonoffNative.gatewayToken();node.type='text';node.classList.remove('hide');node.select();
+}
+refresh();setInterval(refresh,2500);setInterval(updateAuth,4000);
+
 </script></body></html>

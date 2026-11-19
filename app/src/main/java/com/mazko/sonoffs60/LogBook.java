@@ -17,7 +17,7 @@ public final class LogBook {
         while (lines.size() > 1500) lines.removeFirst();
     }
     public synchronized String asText() {
-        StringBuilder out = new StringBuilder("Sonoff S60 — діагностичний журнал (секрети виключено)\n");
+        StringBuilder out = new StringBuilder("Sonoff Gateway — діагностичний журнал (секрети виключено)\n");
         for (String s : lines) out.append(s).append('\n');
         return out.toString();
     }

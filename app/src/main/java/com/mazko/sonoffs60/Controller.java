@@ -33,81 +33,66 @@ final class Controller {
     private final ScheduledExecutorService refresh=Executors.newSingleThreadScheduledExecutor();
     private final AtomicLong sequence=new AtomicLong(System.currentTimeMillis());
     private volatile long lastDiscoveryAt=System.currentTimeMillis();
-    private volatile long lastApAttempt=0;
-    private volatile long lastPrivateServerCheck=0;
-    private volatile boolean lastApConnected=false;
-    private final ApPairingManager apManager;
-    private final LegacyPrivateServer privateServer;
-    private volatile String apResult="Не перевірявся";
-    private volatile String apLastSsid="";
     private final java.util.Set<String> alternateServices=java.util.concurrent.ConcurrentHashMap.newKeySet();
     private LanDiscovery discovery;
+    final AndroidGatewayServer gateway;
+    final EwelinkOAuth oauth;
     Controller(Context context) {
         appContext=context.getApplicationContext();
         keys=new SecureKeys(context);
         remembered=context.getSharedPreferences("confirmed_s60", Context.MODE_PRIVATE);
         discovery=new LanDiscovery(context,this,log);
-        apManager=new ApPairingManager(context,this,log);
-        privateServer=new LegacyPrivateServer(context,this);
-        log.add("APP", "Started S60 local control; official firmware untouched");
+        gateway=new AndroidGatewayServer(context,this);
+        oauth=new EwelinkOAuth(this);
+        log.add("APP", "Started Sonoff Android Gateway; factory settings untouched");
         refresh.scheduleAtFixedRate(() -> {
             ArrayList<S60Device> snapshot;
             synchronized(this){snapshot=new ArrayList<>(devices.values());}
             long now=System.currentTimeMillis();
-            for(S60Device d:snapshot) if(!privateServer.isConnected(d.id) && (d.hasKey || !d.encrypted) && !d.ip.isEmpty() && now-d.lastSeen<120000 &&
+            for(S60Device d:snapshot) if((d.hasKey || !d.encrypted) && !d.ip.isEmpty() && now-d.lastSeen<120000 &&
                   now-d.lastAutoProbe>20000 && (now-d.lastData>23000 || now-d.lastHttpOk>30000)) {
                 d.lastAutoProbe=now;
                 network.execute(() -> autoRead(d,false));
             }
-            // Try first-party device AP pairing automatically, only on its dedicated subnet.
-            // Ordinary home Wi-Fi must NOT trigger a request to 10.10.7.1.
-            boolean ap=!apManager.isConnecting() && LocalPairingProbe.canReadFromDeviceAp(appContext);
-            if(!ap) {
-                if(lastApConnected)log.add("PAIR.NETWORK", "Exited device setup Wi-Fi; returning to LAN discovery");
-                lastApConnected=false;lastApAttempt=0;
-            } else {
-                if(!lastApConnected)log.add("PAIR.NETWORK", "Device setup Wi-Fi detected; verifying local onboarding support");
-                lastApConnected=true;
-                if(lastApAttempt==0 || now-lastApAttempt>90000) {
-                    lastApAttempt=now;
-                    network.execute(() -> {
-                        try {tryLocalOnboarding();}
-                        catch(Exception ex) { /* The reason was recorded in LOCAL.PAIR.UNAVAILABLE */ }
-                    });
-                }
-            }
-            if(now-lastPrivateServerCheck>45000){
-                lastPrivateServerCheck=now;
-                diagnostic.execute(privateServer::startOrRefresh);
-            }
+            gateway.startOrRefresh();
             if(now-lastDiscoveryAt>180000) {lastDiscoveryAt=now;discovery.rescan();}
         },10,12,TimeUnit.SECONDS);
     }
     void begin() {
         log.add("NET.ACTIVE",LanDiagnostics.wifiSnapshot(appContext));
-        log.add("DIAG.POLICY","private Wi-Fi IPv4 only; eWeLink AES and DIY plaintext selected by TXT; TCP/read-only probes; passive Matter detection; no cloud; writes require verified access");
+        log.add("DIAG.POLICY","private Wi-Fi IPv4 only; eWeLink AES and DIY plaintext selected by TXT; TCP/read-only probes; passive Matter detection; no cloud during LAN operation; optional account-authorized key import; writes require verified access");
         discovery.start();log.add("SCAN.AUTOMATIC","Automatic discovery enabled at startup");
-        // Legacy SoftAP fallback scans for an actual ITEAD hotspot before requesting OS approval.
-        apManager.scan();
-        diagnostic.execute(privateServer::startOrRefresh);
+        // Start the secure, owner-authorized LAN gateway; never alter factory pairing.
+        diagnostic.execute(gateway::startOrRefresh);
     }
-    void rescan() {rescanLanOnly();apManager.scan();diagnostic.execute(privateServer::startOrRefresh);}
+    void rescan() {rescanLanOnly();}
     void rescanLanOnly() {discovery.rescan();lastDiscoveryAt=System.currentTimeMillis();log.add("SCAN", "Discovery query requested");
         log.add("NET.ACTIVE",LanDiagnostics.wifiSnapshot(appContext));
-        diagnostic.execute(privateServer::startOrRefresh);}
-    void scanApAfterPermissions() {apManager.scan();}
-    void updateApProgress(String ssid,String result) {
-        apLastSsid=(ssid==null||ssid.isEmpty())?"":LegacyApIdentity.safeSsid(ssid);apResult=result;
+        diagnostic.execute(gateway::startOrRefresh);}
+    void scanApAfterPermissions() { /* The gateway never changes a device's pairing or Wi-Fi configuration. */ }
+    void close(){oauth.close();gateway.stop();discovery.stop();diagnostic.shutdownNow();network.shutdownNow();refresh.shutdownNow();}
+    String gatewayStatus(){return gateway.status();}
+    synchronized void importAuthorizedKey(String id,String key,String name,String uiid,String model) throws Exception {
+        if(id==null||!id.matches("[A-Za-z0-9]{10}")||key==null||key.length()<6||key.length()>128)
+            throw new IllegalArgumentException("INVALID_ACCOUNT_DEVICE");
+        keys.put(id,key);
+        S60Device d=devices.get(id);
+        if(d==null){d=new S60Device(id);d.lastSeen=0;devices.put(id,d);}
+        d.hasKey=true;d.authenticated=false;
+        if(name!=null&&!name.isEmpty())d.advertisedName=LanDiagnostics.shortText(name);
+        if(uiid!=null&&uiid.matches("[0-9]{1,5}"))d.uiidHint=uiid;
+        if(model!=null&&!model.isEmpty())d.modelHint=LanDiagnostics.shortText(model);
+        d.error="";d.errorCode="";d.errorAdvice="";
+        log.add("OAUTH.KEY.IMPORTED",id+" saved using Android Keystore; LAN verification pending");
+        if(!d.ip.isEmpty()) {final S60Device target=d;network.execute(()->autoRead(target,true));}
     }
-    void close(){privateServer.stop();apManager.close();discovery.stop();diagnostic.shutdownNow();network.shutdownNow();refresh.shutdownNow();}
     synchronized String diagnosticReport() {
-        StringBuilder out=new StringBuilder("Sonoff S60 — детальна перевірка локального з’єднання (без секретів)\n");
+        StringBuilder out=new StringBuilder("Sonoff — детальна перевірка локального з’єднання (без секретів)\n");
         out.append("Мережа телефону: ").append(LanDiagnostics.wifiSnapshot(appContext)).append('\n');
-        out.append("Приватний сервер (старий Sonoff HTTPS/WSS): ").append(privateServer.status()).append('\n');
+        out.append("Android Gateway: ").append(gateway.status()).append('\n');
         out.append("Виявлено: ").append(devices.size()).append("; NSD/mDNS активні: ").append(discovery.isSearchReady()).append('\n');
         out.append("Керування реле можливе лише після верифікації ключа або відкритого DIY API.\n");
         out.append("Інші протоколи (лише виявлення): ").append(alternateServices.size()).append("; див. PROTOCOL.OTHER у журналі.\n");
-        out.append("Legacy SoftAP (S31-like) останній результат: ").append(apResult).append("; AP: ").append(apLastSsid.isEmpty()?"не виявлено":apLastSsid).append('\n');
         for(String id:new TreeSet<>(devices.keySet())) {
             S60Device d=devices.get(id);
             out.append("--- ").append(d.id).append(" ---\n")
@@ -168,11 +153,6 @@ final class Controller {
         boolean newDevice;
         boolean mustProbe=false;
         boolean mustReadOnly=false;
-        if(privateServer.isConnected(id)) {
-            // Do not downgrade a validated private-cloud session to unauthenticated mDNS.
-            log.add("PRIVATE.LAN.PARALLEL",id+" mDNS also present; session preserved");
-            return;
-        }
         synchronized(this) {
             d=devices.get(id);newDevice=d==null;
             if(d==null) {d=new S60Device(id);devices.put(id,d);}
@@ -302,103 +282,6 @@ final class Controller {
             if(d.authenticated && d.encrypted)requestConfiguration(d);
         });
     }
-    /** Only store a key supplied by a validated factory AP, never fabricate or log it. */
-    void acceptApKey(LocalPairingProbe.Result result,String ssid) throws Exception {
-        if(result==null || !result.id.matches("[A-Za-z0-9]{10}") ||
-           !LegacyApIdentity.matchesId(ssid,result.id))throw new Exception("AP_UNVERIFIED_IDENTITY");
-        keys.put(result.id,result.key); // Android Keystore AES-GCM
-        synchronized(this) {
-            S60Device existing=devices.get(result.id);
-            if(existing!=null){
-                existing.hasKey=true;existing.authenticated=false;
-                existing.errorCode="";existing.errorAdvice="";existing.error="";
-                existing.accessReason="AP_KEY_IMPORTED; reconnect to LAN to verify";
-            }
-        }
-        apResult="Ключ отримано локально (LAN-підтвердження ще немає)";
-        apLastSsid=LegacyApIdentity.safeSsid(ssid);
-        log.add("AP.KEY.STORED",result.id+" encrypted in Android Keystore; AP identity matched; LAN AUTH NOT YET VERIFIED");
-        log.add("AP.PAIR.LIMITATION","Legacy AP reading does not join a new plug to home Wi-Fi; do not reset an installed plug merely to run a diagnostic");
-    }
-    /** Legacy direct AP check, only on an already-verified 10.10.7.x interface. */
-    JSONObject tryLocalOnboarding() throws Exception {
-        try {
-            LocalPairingProbe.Result result=LocalPairingProbe.readFromDeviceAp(appContext);
-            // The SSID is not available reliably through ConnectivityManager; this
-            // path was entered ONLY because the phone already uses the device subnet.
-            keys.put(result.id,result.key);
-            synchronized(this){S60Device d=devices.get(result.id);
-                if(d!=null){d.hasKey=true;d.authenticated=false;d.accessReason="AP_KEY_IMPORTED; LAN pending";}}
-            apResult="Ключ отримано через раніше підключену AP";
-            log.add("LOCAL.PAIR.READ",result.id+" acquired through verified 10.10.7.x network; secret hidden; requires LAN verification");
-            return new JSONObject().put("ok",true).put("id",result.id)
-                .put("message","Ключ збережено локально, потрібне повторне LAN-підключення");
-        }catch(Exception ex){
-            apResult="AP /device недоступний ("+ex.getClass().getSimpleName()+")";
-            log.add("LOCAL.PAIR.UNAVAILABLE",ex.getClass().getSimpleName()+" "+LegacyApIdentity.safeError(ex.getMessage()));throw ex;
-        }
-    }
-    /** Local private-cloud ingress: only an AP-verified or otherwise user-authorized device key is accepted. */
-    boolean legacyAuthorize(String id,String offered) {
-        return LegacyCloudProtocol.isDeviceId(id) && LegacyCloudProtocol.equalSecret(keys.get(id),offered);
-    }
-    synchronized void legacyRegister(String id,String model,String firmware,String remoteIp) {
-        S60Device d=devices.get(id);
-        if(d==null){d=new S60Device(id);devices.put(id,d);}
-        d.protocol="LEGACY_CLOUD_WSS";d.lastSource="private HTTPS/WSS server";
-        d.encrypted=true;d.hasKey=true;d.authenticated=true;
-        d.localType=model.toUpperCase(java.util.Locale.ROOT).contains("DUAL") ||
-            "PSF-B04-GL".equalsIgnoreCase(model)?"strip":"plug";
-        d.modelHint=LanDiagnostics.shortText(model);
-        d.firmwareHint=LanDiagnostics.shortText(firmware);
-        d.ip=remoteIp;d.lastSeen=System.currentTimeMillis();
-        d.errorCode="";d.error="";d.errorAdvice="";
-        d.accessReason="PRIVATE_SERVER_AUTHENTICATED; awaiting state update";
-        d.identifiedAs="private server reported: "+d.modelHint;
-        log.add("PRIVATE.DEVICE.REGISTERED",id+" model="+d.modelHint+" firmware="+d.firmwareHint+
-            " (private server credentials validated; state not yet verified)");
-    }
-    synchronized void legacyState(String id,JSONObject params) {
-        S60Device d=devices.get(id);
-        if(d==null||!privateServer.isConnected(id))return;
-        d.lastSeen=System.currentTimeMillis();
-        if(!LegacyCloudProtocol.hasRelayState(params)) {
-            d.observeReadOnly(params);
-            log.add("PRIVATE.STATE.METADATA",id+" no confirmed relay field");return;
-        }
-        acceptState(d,params,"PRIVATE.WSS");
-        d.accessReason="PRIVATE_SERVER_AUTHENTICATED_STATE";
-    }
-    synchronized JSONObject legacyQuery(String id,JSONArray requested)throws Exception {
-        JSONObject response=new JSONObject();
-        S60Device d=devices.get(id);
-        if(d==null||requested==null)return response;
-        java.util.Set<String> allowed=new java.util.HashSet<>(java.util.Arrays.asList(
-            "switch","switches","power","voltage","current","dayKwh","monthKwh","rssi","sledOnline","startup"));
-        for(int i=0;i<Math.min(20,requested.length());i++){
-            String field=requested.optString(i,"");
-            if(allowed.contains(field)&&d.values.has(field))response.put(field,d.values.get(field));
-        }
-        return response;
-    }
-    synchronized void legacyDisconnect(String id) {
-        S60Device d=devices.get(id);
-        if(d!=null && "LEGACY_CLOUD_WSS".equals(d.protocol)){
-            d.authenticated=false;d.lastSeen=0;d.pending="";
-            d.errorCode="PRIVATE_CONNECTION_LOST";
-            d.error="З'єднання з приватним сервером втрачено.";
-            d.errorAdvice="Перевірте Wi-Fi та серверний журнал.";
-        }
-    }
-    String privateServerStatus(){return privateServer.status();}
-    void provisionLegacy(String ssid,String password,boolean confirmed)throws Exception {
-        if(!confirmed)throw new Exception("Потрібна явна згода на зміну налаштувань Wi-Fi розетки");
-        if(!privateServer.isReady()) {
-            diagnostic.execute(privateServer::startOrRefresh);
-            throw new Exception("Приватний HTTPS-сервер ще не готовий. Повторіть після перевірки журналу.");
-        }
-        apManager.provisionToPrivateServer(ssid,password,privateServer.ip());
-    }
     synchronized void confirmModel(String id) throws Exception {
         S60Device d=devices.get(id);
         if(d==null)throw new Exception("Unknown device");
@@ -412,17 +295,6 @@ final class Controller {
         final S60Device d;
         synchronized(this){d=devices.get(id);}
         if(d==null) throw new Exception("Unknown device");
-        if(privateServer.isConnected(id)) {
-            if(!d.authenticated || (d.lastData==0) ||
-                !(d.values.has("switch") || d.hasOutletZero()))
-                throw new Exception("Приватний сервер ще не отримав підтверджений стан реле");
-            if(outlet>0 && !d.hasOutlet(outlet))throw new Exception("Канал не підтверджений пристроєм");
-            Integer channel=d.hasOutletZero()?outlet:null;
-            if(!privateServer.relay(id,on,channel))throw new Exception("Не вдалося відправити команду через приватний сервер");
-            synchronized(this){d.pending=on?"on":"off";d.pendingOutlet=outlet;d.pendingSince=System.currentTimeMillis();}
-            log.add("RELAY.QUEUED",id+" private WebSocket request; confirmation pending");
-            return;
-        }
         if(!d.encrypted && !ProtocolRouter.trustedPlaintextRelay(d.protocol,d.localType,
              d.values.has("switch")||d.hasOutletZero(),d.plaintextHttpConfirmed))
             throw new Exception("Немає підтвердження відкритого керування для цієї моделі");
