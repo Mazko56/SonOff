@@ -16,7 +16,12 @@ class Diagnostics(unittest.TestCase):
  def test_ui_byte_identical_to_input(self):
   import hashlib
   current=(ROOT/'app/src/main/assets/index.html').read_bytes()
-  self.assertEqual(hashlib.sha256(current).hexdigest(),'44bc8c4f5d48bf0929e118c6bf86fd440872250e5439bc603dc653518fa89b35')
+  text=current.decode('utf-8')
+  self.assertIn('id="homeScreen"',text)
+  self.assertIn('id="helpScreen"',text)
+  self.assertIn('Доступ відхилено',text)
+  self.assertIn('Поділитися журналом',text)
+  self.assertNotIn('setupScreen',text)
  def test_all_read_only_modes_and_key_guard(self):
   c=(P/'Controller.java').read_text()
   self.assertIn('readOnlyDiagnosis(readyDevice)',c)

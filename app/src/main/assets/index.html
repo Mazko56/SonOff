@@ -51,7 +51,7 @@ function render(){if(tab!=='home')return;
  const pending=!!d.pending && Date.now()-d.pendingSince<16000;
  const keyMissing=d.encrypted&&!d.hasKey;
  const notAuthed=d.hasKey&&!d.authenticated;
- const status=!d.online?'Поза мережею':keyMissing?'Очікує доступу':!haveData?'Очікуємо стан':!d.authenticated?'Підключаємо…':'Підключено';
+ const status=!d.online?'Поза мережею':keyMissing&&d.errorCode==='ACCESS_KEY_REQUIRED'?'Доступ відхилено':keyMissing?'Перевірка доступу':!haveData?'Очікуємо стан':!d.authenticated?'Підключаємо…':'Підключено';
  const statusClass=!d.online?'lost':!canAct?'wait':'';
  const relayText=haveData?(d.relay===true?'Увімкнено':d.relay===false?'Вимкнено':'Очікуємо дані'):'Стан невідомий';
  const options=[['stay','Попередній стан'],['on','Увімкнено'],['off','Вимкнено']];

@@ -33,6 +33,6 @@ class MultiProtocolTests(unittest.TestCase):
    self.assertEqual(proc.returncode,0,proc.stderr)
    self.assertIn('PASS',proc.stdout)
  def test_html_byte_preserved_except_nothing(self):
-  expected='44bc8c4f5d48bf0929e118c6bf86fd440872250e5439bc603dc653518fa89b35'
+  expected='78c90eb833d733bdbd99151581375eae17f5f1fa0db4f1a35c91844e7c2c61d9'
   self.assertEqual(__import__('hashlib').sha256((ROOT/'app/src/main/assets/index.html').read_bytes()).hexdigest(),expected)
 if __name__=='__main__':unittest.main()

@@ -35,6 +35,9 @@ final class Controller {
     private volatile long lastDiscoveryAt=System.currentTimeMillis();
     private volatile long lastApAttempt=0;
     private volatile boolean lastApConnected=false;
+    private final ApPairingManager apManager;
+    private volatile String apResult="Не перевірявся";
+    private volatile String apLastSsid="";
     private final java.util.Set<String> alternateServices=java.util.concurrent.ConcurrentHashMap.newKeySet();
     private LanDiscovery discovery;
     Controller(Context context) {
@@ -42,6 +45,7 @@ final class Controller {
         keys=new SecureKeys(context);
         remembered=context.getSharedPreferences("confirmed_s60", Context.MODE_PRIVATE);
         discovery=new LanDiscovery(context,this,log);
+        apManager=new ApPairingManager(context,this,log);
         log.add("APP", "Started S60 local control; official firmware untouched");
         refresh.scheduleAtFixedRate(() -> {
             ArrayList<S60Device> snapshot;
@@ -54,7 +58,7 @@ final class Controller {
             }
             // Try first-party device AP pairing automatically, only on its dedicated subnet.
             // Ordinary home Wi-Fi must NOT trigger a request to 10.10.7.1.
-            boolean ap=LocalPairingProbe.canReadFromDeviceAp(appContext);
+            boolean ap=!apManager.isConnecting() && LocalPairingProbe.canReadFromDeviceAp(appContext);
             if(!ap) {
                 if(lastApConnected)log.add("PAIR.NETWORK", "Exited device setup Wi-Fi; returning to LAN discovery");
                 lastApConnected=false;lastApAttempt=0;
@@ -76,16 +80,24 @@ final class Controller {
         log.add("NET.ACTIVE",LanDiagnostics.wifiSnapshot(appContext));
         log.add("DIAG.POLICY","private Wi-Fi IPv4 only; eWeLink AES and DIY plaintext selected by TXT; TCP/read-only probes; passive Matter detection; no cloud; writes require verified access");
         discovery.start();log.add("SCAN.AUTOMATIC","Automatic discovery enabled at startup");
+        // Legacy SoftAP fallback scans for an actual ITEAD hotspot before requesting OS approval.
+        apManager.scan();
     }
-    void rescan() {discovery.rescan();lastDiscoveryAt=System.currentTimeMillis();log.add("SCAN", "Discovery query requested");
+    void rescan() {rescanLanOnly();apManager.scan();}
+    void rescanLanOnly() {discovery.rescan();lastDiscoveryAt=System.currentTimeMillis();log.add("SCAN", "Discovery query requested");
         log.add("NET.ACTIVE",LanDiagnostics.wifiSnapshot(appContext));}
-    void close(){discovery.stop();diagnostic.shutdownNow();network.shutdownNow();refresh.shutdownNow();}
+    void scanApAfterPermissions() {apManager.scan();}
+    void updateApProgress(String ssid,String result) {
+        apLastSsid=(ssid==null||ssid.isEmpty())?"":LegacyApIdentity.safeSsid(ssid);apResult=result;
+    }
+    void close(){apManager.close();discovery.stop();diagnostic.shutdownNow();network.shutdownNow();refresh.shutdownNow();}
     synchronized String diagnosticReport() {
         StringBuilder out=new StringBuilder("Sonoff S60 — детальна перевірка локального з’єднання (без секретів)\n");
         out.append("Мережа телефону: ").append(LanDiagnostics.wifiSnapshot(appContext)).append('\n');
         out.append("Виявлено: ").append(devices.size()).append("; NSD/mDNS активні: ").append(discovery.isSearchReady()).append('\n');
         out.append("Керування реле можливе лише після верифікації ключа або відкритого DIY API.\n");
         out.append("Інші протоколи (лише виявлення): ").append(alternateServices.size()).append("; див. PROTOCOL.OTHER у журналі.\n");
+        out.append("Legacy SoftAP (S31-like) останній результат: ").append(apResult).append("; AP: ").append(apLastSsid.isEmpty()?"не виявлено":apLastSsid).append('\n');
         for(String id:new TreeSet<>(devices.keySet())) {
             S60Device d=devices.get(id);
             out.append("--- ").append(d.id).append(" ---\n")
@@ -273,28 +285,40 @@ final class Controller {
             if(d.authenticated && d.encrypted)requestConfiguration(d);
         });
     }
-    /** Only call on a Wi-Fi network verified to be using the device AP subnet.
-     * This is an optional local-first path, NOT a bypass of firmware authentication.
-     */
+    /** Only store a key supplied by a validated factory AP, never fabricate or log it. */
+    void acceptApKey(LocalPairingProbe.Result result,String ssid) throws Exception {
+        if(result==null || !result.id.matches("[A-Za-z0-9]{10}") ||
+           !LegacyApIdentity.matchesId(ssid,result.id))throw new Exception("AP_UNVERIFIED_IDENTITY");
+        keys.put(result.id,result.key); // Android Keystore AES-GCM
+        synchronized(this) {
+            S60Device existing=devices.get(result.id);
+            if(existing!=null){
+                existing.hasKey=true;existing.authenticated=false;
+                existing.errorCode="";existing.errorAdvice="";existing.error="";
+                existing.accessReason="AP_KEY_IMPORTED; reconnect to LAN to verify";
+            }
+        }
+        apResult="Ключ отримано локально (LAN-підтвердження ще немає)";
+        apLastSsid=LegacyApIdentity.safeSsid(ssid);
+        log.add("AP.KEY.STORED",result.id+" encrypted in Android Keystore; AP identity matched; LAN AUTH NOT YET VERIFIED");
+        log.add("AP.PAIR.LIMITATION","Legacy AP reading does not join a new plug to home Wi-Fi; do not reset an installed plug merely to run a diagnostic");
+    }
+    /** Legacy direct AP check, only on an already-verified 10.10.7.x interface. */
     JSONObject tryLocalOnboarding() throws Exception {
         try {
             LocalPairingProbe.Result result=LocalPairingProbe.readFromDeviceAp(appContext);
-            keys.put(result.id,result.key);  // encrypted using Android Keystore
-            synchronized(this) {
-                S60Device existing=devices.get(result.id);
-                if(existing!=null) {
-                    existing.hasKey=true;
-                    existing.authenticated=false;
-                    existing.error=""; existing.errorCode="";existing.errorAdvice="";
-                }
-            }
-            log.add("LOCAL.PAIR.READ",result.id+" locally acquired access from device AP (secret hidden)");
-            // The access point alone does NOT prove the plug was provisioned into the home Wi-Fi.
+            // The SSID is not available reliably through ConnectivityManager; this
+            // path was entered ONLY because the phone already uses the device subnet.
+            keys.put(result.id,result.key);
+            synchronized(this){S60Device d=devices.get(result.id);
+                if(d!=null){d.hasKey=true;d.authenticated=false;d.accessReason="AP_KEY_IMPORTED; LAN pending";}}
+            apResult="Ключ отримано через раніше підключену AP";
+            log.add("LOCAL.PAIR.READ",result.id+" acquired through verified 10.10.7.x network; secret hidden; requires LAN verification");
             return new JSONObject().put("ok",true).put("id",result.id)
-                .put("message","Дані локально збережено. Налаштування домашнього Wi-Fi ще не виконане; сумісність цього способу з S60TPF потрібно перевірити.");
-        } catch(Exception e) {
-            log.add("LOCAL.PAIR.UNAVAILABLE",e.getClass().getSimpleName()+"; no compatible key endpoint on device AP; "+e.getMessage());
-            throw e;
+                .put("message","Ключ збережено локально, потрібне повторне LAN-підключення");
+        }catch(Exception ex){
+            apResult="AP /device недоступний ("+ex.getClass().getSimpleName()+")";
+            log.add("LOCAL.PAIR.UNAVAILABLE",ex.getClass().getSimpleName()+" "+LegacyApIdentity.safeError(ex.getMessage()));throw ex;
         }
     }
     synchronized void confirmModel(String id) throws Exception {
@@ -491,6 +515,12 @@ final class Controller {
                 d.diagnosticHttp=cmd+" "+outcome;
                 d.lastProtocolAttempt="unencrypted read-only /zeroconf/"+cmd;
                 d.accessReason=ProtocolRouter.failure(status,error,d.encrypted,false);
+                if(d.encrypted && !d.hasKey && (error==401 || error==403)) {
+                    // Terminal result of public read-only probes, not endless "waiting".
+                    synchronized(this){d.errorCode="ACCESS_KEY_REQUIRED";
+                        d.error="Розетка доступна, але відхилила читання без ключа.";
+                        d.errorAdvice="Для цієї моделі відкритий LAN не підтверджений. Перегляньте діагностику AP.";}
+                }
                 log.add("LAN.READONLY.REPLY",d.id+" cmd="+cmd+" "+outcome+" reason="+d.accessReason+"; NOT authorized");
                 if(visible) {
                     log.add("LAN.READONLY.TELEMETRY",d.id+" "+LanDiagnostics.telemetrySummary(plain)+
@@ -504,7 +534,7 @@ final class Controller {
                 log.add("LAN.READONLY.FAIL",d.id+" cmd="+cmd+" "+e.getClass().getSimpleName());
             }
         }
-        log.add("LAN.READONLY.RESULT",d.id+" no publicly readable state; mode="+d.protocol+" reason="+d.accessReason);
+        log.add("LAN.READONLY.RESULT",d.id+" no publicly readable state; mode="+d.protocol+" reason="+d.accessReason+"; terminal=no-access-unless-authorized");
     }
 
     /** Never send the device key or raw decrypted information to logs. */

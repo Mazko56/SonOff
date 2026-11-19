@@ -15,7 +15,7 @@ class AutoLocal(unittest.TestCase):
   self.assertIn('getLinkAddresses()',PROBE)
   self.assertIn('TRANSPORT_WIFI',PROBE)
   self.assertIn('DeviceApNetwork.matches(ip,la.getPrefixLength())',PROBE)
-  self.assertIn('if(chosen==null)throw',PROBE)
+  self.assertIn('if(n==null)throw',PROBE)
   self.assertIn('http://10.10.7.1/device',PROBE)
  def test_no_unsafe_bypass(self):
   self.assertIn('ACCESS.NOT_YET_AUTHORIZED',CONT)

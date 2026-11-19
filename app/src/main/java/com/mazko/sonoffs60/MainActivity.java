@@ -1,6 +1,10 @@
 package com.mazko.sonoffs60;
 
 import android.app.Activity;
+import android.Manifest;
+import android.os.Build;
+import android.content.pm.PackageManager;
+import java.util.ArrayList;
 import android.content.Intent;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
@@ -57,10 +61,30 @@ public final class MainActivity extends Activity {
             setContentView(web);
             web.loadUrl("http://127.0.0.1:"+localPort+"/");
             controller.begin();
+            requestNearbyWifiPermissions();
         } catch(Exception e) {
             TextView t=new TextView(this);
             t.setText("Не вдалося запустити застосунок: "+e.getClass().getSimpleName()+" "+e.getMessage());
             t.setPadding(25,50,25,25);setContentView(t);
+        }
+    }
+    /** System permission dialogs only; no changes to the HTML panel. */
+    private void requestNearbyWifiPermissions() {
+        ArrayList<String> missing=new ArrayList<>();
+        if(Build.VERSION.SDK_INT>=29 && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED)
+            missing.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES)!=PackageManager.PERMISSION_GRANTED)
+            missing.add(Manifest.permission.NEARBY_WIFI_DEVICES);
+        if(!missing.isEmpty())requestPermissions(missing.toArray(new String[0]),104);
+    }
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grants) {
+        super.onRequestPermissionsResult(requestCode,permissions,grants);
+        if(requestCode==104 && controller!=null){
+            boolean granted=true;
+            for(int g:grants)if(g!=PackageManager.PERMISSION_GRANTED)granted=false;
+            controller.log.add(granted?"AP.PERMISSION.GRANTED":"AP.PERMISSION.DENIED",
+                    granted?"Nearby Wi-Fi scan permission granted":"AP fallback disabled; ordinary LAN discovery remains active");
+            if(granted)controller.scanApAfterPermissions();
         }
     }
     @Override public void onResume() {

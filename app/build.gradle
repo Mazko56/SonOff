@@ -6,8 +6,8 @@ android {
         applicationId 'com.mazko.sonoffs60'
         minSdk 26
         targetSdk 35
-        versionCode 9
-        versionName '1.4.0-sonofflan-adapters'
+        versionCode 10
+        versionName '1.5.0-auto-legacy-ap'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
